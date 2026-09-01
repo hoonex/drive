@@ -137,7 +137,7 @@ fun LandscapeConnectionScreen(
                     )
                     Spacer(Modifier.height(20.dp))
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        FeatureChip(
+                        LandscapeFeatureChip(
                             icon = { Icon(Icons.Rounded.Bolt, null, modifier = Modifier.size(15.dp)) },
                             text = if (viewModel.settings.lowLatencyMode) {
                                 "Adaptive low latency"
@@ -145,7 +145,7 @@ fun LandscapeConnectionScreen(
                                 "100 Hz balanced"
                             },
                         )
-                        FeatureChip(
+                        LandscapeFeatureChip(
                             icon = { Icon(Icons.Rounded.Speed, null, modifier = Modifier.size(15.dp)) },
                             text = "${viewModel.settings.steeringRange}° range",
                         )
@@ -266,6 +266,31 @@ fun LandscapeConnectionScreen(
                     }
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun LandscapeFeatureChip(
+    icon: @Composable () -> Unit,
+    text: String,
+) {
+    Surface(
+        color = DriveAccentMuted.copy(alpha = 0.7f),
+        shape = RoundedCornerShape(999.dp),
+        border = BorderStroke(1.dp, DriveBorder),
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 10.dp, vertical = 7.dp),
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            icon()
+            Text(
+                text = text,
+                color = DriveTextMuted,
+                style = MaterialTheme.typography.labelMedium,
+            )
         }
     }
 }
