@@ -45,6 +45,16 @@ class MainActivity : ComponentActivity() {
     }
   }
 
+  override fun onStart() {
+    super.onStart()
+    viewModel.resumeControllerIfRequested()
+  }
+
+  override fun onStop() {
+    viewModel.pauseControllerForBackground()
+    super.onStop()
+  }
+
   override fun onWindowFocusChanged(hasFocus: Boolean) {
     super.onWindowFocusChanged(hasFocus)
     if (hasFocus) hideSystemUi()
