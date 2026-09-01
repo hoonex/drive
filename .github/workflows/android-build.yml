@@ -5,6 +5,7 @@ on:
     branches:
       - main
       - feat/production-low-latency-ux
+      - ulw/drive-1.2-production-upgrade
     paths:
       - "app/**"
       - "build.gradle.kts"
@@ -30,6 +31,8 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Set up JDK 17
         uses: actions/setup-java@v4
@@ -40,14 +43,14 @@ jobs:
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
 
-      - name: Install Android SDK 36
+      - name: Install Android SDK 37
         shell: bash
-        run: sdkmanager --install "platforms;android-36" "build-tools;36.0.0"
+        run: sdkmanager --install "platforms;android-37" "build-tools;36.0.0"
 
-      - name: Set up Gradle 9.3.1
+      - name: Set up Gradle 9.6.0
         uses: gradle/actions/setup-gradle@v4
         with:
-          gradle-version: "9.3.1"
+          gradle-version: "9.6.0"
 
       - name: Restore stable preview signing key
         uses: actions/cache@v4
@@ -55,8 +58,8 @@ jobs:
           path: ~/.android/debug.keystore
           key: pcwheel-android-preview-signing-v1
 
-      - name: Unit tests and debug APK
-        run: gradle --no-daemon --stacktrace :app:testDebugUnitTest :app:assembleDebug
+      - name: Unit tests, lint and debug APK
+        run: gradle --no-daemon --stacktrace :app:testDebugUnitTest :app:lintDebug :app:assembleDebug
 
       - name: Prepare APK asset
         shell: bash
@@ -64,6 +67,7 @@ jobs:
           mkdir -p dist
           cp app/build/outputs/apk/debug/app-debug.apk dist/PCWheel-android-preview.apk
           sha256sum dist/PCWheel-android-preview.apk | tee dist/SHA256SUMS.txt
+          printf '%s\n' "$GITHUB_SHA" > dist/SOURCE_COMMIT.txt
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
@@ -73,21 +77,28 @@ jobs:
           path: |
             dist/PCWheel-android-preview.apk
             dist/SHA256SUMS.txt
+            dist/SOURCE_COMMIT.txt
 
       - name: Publish preview release
-        if: github.event_name == 'push'
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          set -euo pipefail
           tag="android-preview"
+          git tag -f "$tag" "$GITHUB_SHA"
+          git push origin "refs/tags/$tag" --force
+
+          notes="Installable debug preview of PC Wheel Android.\n\nSource commit: $GITHUB_SHA\nBuild run: $GITHUB_RUN_NUMBER"
           if gh release view "$tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
-            gh release upload "$tag" dist/PCWheel-android-preview.apk dist/SHA256SUMS.txt --repo "$GITHUB_REPOSITORY" --clobber
+            gh release upload "$tag" dist/PCWheel-android-preview.apk dist/SHA256SUMS.txt dist/SOURCE_COMMIT.txt --repo "$GITHUB_REPOSITORY" --clobber
+            gh release edit "$tag" --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --title "PC Wheel Android Preview" --prerelease --notes "$notes"
           else
-            gh release create "$tag" dist/PCWheel-android-preview.apk dist/SHA256SUMS.txt \
+            gh release create "$tag" dist/PCWheel-android-preview.apk dist/SHA256SUMS.txt dist/SOURCE_COMMIT.txt \
               --repo "$GITHUB_REPOSITORY" \
               --target "$GITHUB_SHA" \
               --title "PC Wheel Android Preview" \
               --prerelease \
-              --notes "Installable debug preview of the low-latency Android controller. Built automatically from the latest validated source."
+              --notes "$notes"
           fi
