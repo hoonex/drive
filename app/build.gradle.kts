@@ -4,6 +4,8 @@ plugins {
 }
 
 val ciRunNumber = System.getenv("GITHUB_RUN_NUMBER")?.toIntOrNull()
+val explicitVersionCode = System.getenv("PCWHEEL_VERSION_CODE")?.toIntOrNull()
+val explicitVersionName = System.getenv("PCWHEEL_VERSION_NAME")?.takeIf { it.isNotBlank() }
 
 android {
   namespace = "com.example"
@@ -13,8 +15,9 @@ android {
     applicationId = "com.example"
     minSdk = 24
     targetSdk = 36
-    versionCode = (ciRunNumber ?: 3).coerceAtLeast(3)
-    versionName = if (ciRunNumber != null) "1.2.$ciRunNumber" else "1.2.0"
+    versionCode = (explicitVersionCode ?: ciRunNumber ?: 3).coerceAtLeast(3)
+    versionName = explicitVersionName
+      ?: if (ciRunNumber != null) "1.2.$ciRunNumber" else "1.2.0"
 
     testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
   }
