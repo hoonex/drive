@@ -1,12 +1,12 @@
 package com.example
 
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
@@ -14,10 +14,10 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.weight
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.windowInsetsPadding
@@ -62,12 +62,13 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -95,159 +96,147 @@ fun ConnectionScreen(
     var ip by rememberSaveable { mutableStateOf(viewModel.settings.ip) }
     var port by rememberSaveable { mutableStateOf(viewModel.settings.port.toString()) }
     val parsedPort = port.toIntOrNull()
-    val canConnect = ip.trim().isNotEmpty() && parsedPort != null && parsedPort in 1..65535
+    val valid = ip.trim().isNotEmpty() && parsedPort != null && parsedPort in 1..65535
 
-    Box(
+    Row(
         modifier = Modifier
             .fillMaxSize()
             .background(DriveBackground)
-            .windowInsetsPadding(WindowInsets.safeDrawing),
+            .windowInsetsPadding(WindowInsets.safeDrawing)
+            .padding(horizontal = 28.dp, vertical = 22.dp),
+        horizontalArrangement = Arrangement.spacedBy(28.dp),
+        verticalAlignment = Alignment.CenterVertically,
     ) {
-        Row(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(horizontal = 28.dp, vertical = 20.dp),
-            horizontalArrangement = Arrangement.spacedBy(28.dp),
-            verticalAlignment = Alignment.CenterVertically,
+        Column(
+            modifier = Modifier.weight(1f),
+            verticalArrangement = Arrangement.Center,
         ) {
-            Column(
-                modifier = Modifier.weight(0.95f),
-                verticalArrangement = Arrangement.Center,
+            Surface(
+                color = DriveAccentMuted,
+                shape = RoundedCornerShape(999.dp),
             ) {
-                Surface(
-                    color = DriveAccentMuted,
-                    shape = RoundedCornerShape(999.dp),
+                Row(
+                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 7.dp),
+                    horizontalArrangement = Arrangement.spacedBy(7.dp),
+                    verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Row(
-                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 7.dp),
-                        horizontalArrangement = Arrangement.spacedBy(7.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Icon(
-                            imageVector = Icons.Rounded.SportsEsports,
-                            contentDescription = null,
-                            tint = DriveAccent,
-                            modifier = Modifier.size(17.dp),
+                    Icon(
+                        imageVector = Icons.Rounded.SportsEsports,
+                        contentDescription = null,
+                        tint = DriveAccent,
+                        modifier = Modifier.size(17.dp),
+                    )
+                    Text(
+                        text = "PC WHEEL",
+                        color = DriveAccent,
+                        style = MaterialTheme.typography.labelLarge,
+                        letterSpacing = 0.8.sp,
+                    )
+                }
+            }
+
+            Spacer(Modifier.height(18.dp))
+            Text(
+                text = "Drive with your phone.",
+                color = DriveText,
+                style = MaterialTheme.typography.displaySmall,
+            )
+            Spacer(Modifier.height(8.dp))
+            Text(
+                text = "Motion steering, analog pedals and a latency-first UDP controller path.",
+                color = DriveTextMuted,
+                style = MaterialTheme.typography.bodyLarge,
+                modifier = Modifier.widthIn(max = 460.dp),
+            )
+            Spacer(Modifier.height(20.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                FeatureChip(
+                    icon = { Icon(Icons.Rounded.Bolt, null, modifier = Modifier.size(15.dp)) },
+                    text = if (viewModel.settings.lowLatencyMode) "Adaptive low latency" else "100 Hz balanced",
+                )
+                FeatureChip(
+                    icon = { Icon(Icons.Rounded.Speed, null, modifier = Modifier.size(15.dp)) },
+                    text = "${viewModel.settings.steeringRange}° range",
+                )
+            }
+        }
+
+        Surface(
+            modifier = Modifier
+                .weight(1f)
+                .widthIn(max = 520.dp),
+            color = DriveSurface,
+            shape = RoundedCornerShape(28.dp),
+            border = BorderStroke(1.dp, DriveBorder),
+        ) {
+            Column(modifier = Modifier.padding(24.dp)) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = "Connect to PC",
+                            color = DriveText,
+                            style = MaterialTheme.typography.headlineMedium,
                         )
                         Text(
-                            text = "PC WHEEL",
-                            color = DriveAccent,
-                            style = MaterialTheme.typography.labelLarge,
-                            letterSpacing = 0.8.sp,
+                            text = "Run PC Wheel Receiver on the same local network.",
+                            color = DriveTextMuted,
+                            style = MaterialTheme.typography.bodyMedium,
+                        )
+                    }
+                    IconButton(onClick = onNavigateToSettings) {
+                        Icon(
+                            imageVector = Icons.Rounded.Settings,
+                            contentDescription = "Settings",
+                            tint = DriveTextMuted,
                         )
                     }
                 }
 
                 Spacer(Modifier.height(18.dp))
-                Text(
-                    text = "Drive with your phone.",
-                    color = DriveText,
-                    style = MaterialTheme.typography.displaySmall,
+                OutlinedTextField(
+                    value = ip,
+                    onValueChange = { ip = it },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true,
+                    label = { Text("PC IPv4 address") },
+                    leadingIcon = { Icon(Icons.Rounded.Computer, null) },
                 )
-                Spacer(Modifier.height(8.dp))
-                Text(
-                    text = "Motion steering, analog pedals and low-latency UDP in one controller.",
-                    color = DriveTextMuted,
-                    style = MaterialTheme.typography.bodyLarge,
-                    modifier = Modifier.widthIn(max = 470.dp),
+                Spacer(Modifier.height(10.dp))
+                OutlinedTextField(
+                    value = port,
+                    onValueChange = { value ->
+                        if (value.length <= 5 && value.all { it.isDigit() }) port = value
+                    },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true,
+                    label = { Text("UDP port") },
+                    supportingText = { Text("Receiver default: 26760") },
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    leadingIcon = { Icon(Icons.Rounded.Wifi, null) },
+                    isError = port.isNotEmpty() && (parsedPort == null || parsedPort !in 1..65535),
                 )
-                Spacer(Modifier.height(22.dp))
-
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    FeatureChip(
-                        icon = { Icon(Icons.Rounded.Bolt, null, modifier = Modifier.size(15.dp)) },
-                        text = if (viewModel.settings.lowLatencyMode) "Adaptive low latency" else "100 Hz balanced",
-                    )
-                    FeatureChip(
-                        icon = { Icon(Icons.Rounded.Speed, null, modifier = Modifier.size(15.dp)) },
-                        text = "${viewModel.settings.steeringRange}° range",
-                    )
-                }
-            }
-
-            Surface(
-                modifier = Modifier
-                    .weight(1.05f)
-                    .widthIn(max = 520.dp),
-                color = DriveSurface,
-                shape = RoundedCornerShape(28.dp),
-                border = androidx.compose.foundation.BorderStroke(1.dp, DriveBorder),
-                tonalElevation = 0.dp,
-            ) {
-                Column(modifier = Modifier.padding(24.dp)) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Column {
-                            Text(
-                                text = "Connect to PC",
-                                color = DriveText,
-                                style = MaterialTheme.typography.headlineMedium,
-                            )
-                            Text(
-                                text = "PC Receiver must be running on the same network.",
-                                color = DriveTextMuted,
-                                style = MaterialTheme.typography.bodyMedium,
-                            )
-                        }
-                        IconButton(onClick = onNavigateToSettings) {
-                            Icon(
-                                imageVector = Icons.Rounded.Settings,
-                                contentDescription = "Settings",
-                                tint = DriveTextMuted,
-                            )
-                        }
-                    }
-
-                    Spacer(Modifier.height(20.dp))
-                    OutlinedTextField(
-                        value = ip,
-                        onValueChange = { ip = it },
-                        modifier = Modifier.fillMaxWidth(),
-                        singleLine = true,
-                        label = { Text("PC IPv4 address") },
-                        leadingIcon = {
-                            Icon(Icons.Rounded.Computer, contentDescription = null)
-                        },
-                    )
-                    Spacer(Modifier.height(12.dp))
-                    OutlinedTextField(
-                        value = port,
-                        onValueChange = { value ->
-                            if (value.length <= 5 && value.all(Char::isDigit)) port = value
-                        },
-                        modifier = Modifier.fillMaxWidth(),
-                        singleLine = true,
-                        label = { Text("UDP port") },
-                        supportingText = { Text("PC Receiver default: 26760") },
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                        leadingIcon = {
-                            Icon(Icons.Rounded.Wifi, contentDescription = null)
-                        },
-                        isError = port.isNotEmpty() && (parsedPort == null || parsedPort !in 1..65535),
-                    )
-
-                    Spacer(Modifier.height(18.dp))
-                    Button(
-                        onClick = {
-                            viewModel.settings.ip = ip
-                            viewModel.settings.port = parsedPort ?: 26760
-                            onNavigateToController()
-                        },
-                        enabled = canConnect,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(54.dp),
-                        shape = RoundedCornerShape(18.dp),
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = DriveAccent,
-                            contentColor = DriveBackground,
-                        ),
-                    ) {
-                        Text("Start controller", fontWeight = FontWeight.Bold)
-                    }
+                Spacer(Modifier.height(16.dp))
+                Button(
+                    onClick = {
+                        viewModel.settings.ip = ip
+                        viewModel.settings.port = parsedPort ?: 26760
+                        onNavigateToController()
+                    },
+                    enabled = valid,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(54.dp),
+                    shape = RoundedCornerShape(18.dp),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = DriveAccent,
+                        contentColor = DriveBackground,
+                    ),
+                ) {
+                    Text("Start controller", fontWeight = FontWeight.Bold)
                 }
             }
         }
@@ -272,7 +261,7 @@ fun SettingsScreen(viewModel: ControllerViewModel, onBack: () -> Unit) {
                     Column {
                         Text("Controller settings", color = DriveText)
                         Text(
-                            "Changes are saved immediately",
+                            text = "Saved automatically",
                             color = DriveTextFaint,
                             style = MaterialTheme.typography.labelMedium,
                         )
@@ -280,142 +269,141 @@ fun SettingsScreen(viewModel: ControllerViewModel, onBack: () -> Unit) {
                 },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
-                        Icon(Icons.Rounded.ArrowBack, contentDescription = "Back", tint = DriveText)
+                        Icon(Icons.Rounded.ArrowBack, "Back", tint = DriveText)
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = DriveBackground),
             )
         },
     ) { padding ->
-        Column(
+        Row(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(padding)
                 .padding(horizontal = 20.dp, vertical = 10.dp)
                 .verticalScroll(rememberScrollState()),
-            verticalArrangement = Arrangement.spacedBy(14.dp),
+            horizontalArrangement = Arrangement.spacedBy(14.dp),
+            verticalAlignment = Alignment.Top,
         ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(14.dp),
-                verticalAlignment = Alignment.Top,
+            SettingsCard(
+                title = "Steering",
+                subtitle = "Choose the physical steering input and range.",
+                modifier = Modifier.weight(1f),
             ) {
-                SettingsCard(
-                    title = "Steering",
-                    subtitle = "Choose how the phone controls the steering axis.",
-                    modifier = Modifier.weight(1f),
-                ) {
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    SteeringMode.entries.forEach { item ->
+                        FilterChip(
+                            selected = mode == item,
+                            onClick = {
+                                mode = item
+                                viewModel.settings.steeringMode = item
+                                if (haptics) viewModel.haptics.modeChange()
+                            },
+                            label = { Text(item.displayName()) },
+                        )
+                    }
+                }
+
+                Spacer(Modifier.height(18.dp))
+                SettingLabel("Steering range", "$range°")
+                Slider(
+                    value = range.toFloat(),
+                    onValueChange = { raw ->
+                        val snapped = ((raw / 90f).roundToInt() * 90).coerceIn(180, 1080)
+                        range = snapped
+                        viewModel.settings.steeringRange = snapped
+                    },
+                    valueRange = 180f..1080f,
+                    steps = 9,
+                )
+
+                if (mode == SteeringMode.TILT) {
+                    Spacer(Modifier.height(8.dp))
+                    SettingLabel("Tilt sensitivity", "${"%.1f".format(sensitivity)}x")
+                    Slider(
+                        value = sensitivity,
+                        onValueChange = {
+                            sensitivity = it
+                            viewModel.settings.tiltSensitivity = it
+                        },
+                        valueRange = 0.5f..3f,
+                    )
+                }
+
+                if (mode == SteeringMode.TOUCH) {
+                    Spacer(Modifier.height(8.dp))
+                    Text(
+                        text = "Touch wheel return",
+                        color = DriveTextMuted,
+                        style = MaterialTheme.typography.labelLarge,
+                    )
+                    Spacer(Modifier.height(8.dp))
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        SteeringMode.values().forEach { item ->
+                        ReturnMode.entries.forEach { item ->
                             FilterChip(
-                                selected = mode == item,
+                                selected = returnMode == item,
                                 onClick = {
-                                    mode = item
-                                    viewModel.settings.steeringMode = item
-                                    if (haptics) viewModel.haptics.modeChange()
+                                    returnMode = item
+                                    viewModel.settings.touchReturnMode = item
                                 },
                                 label = { Text(item.displayName()) },
                             )
                         }
                     }
-
-                    Spacer(Modifier.height(18.dp))
-                    SettingLabel("Steering range", "$range°")
-                    Slider(
-                        value = range.toFloat(),
-                        onValueChange = { raw ->
-                            val snapped = ((raw / 90f).roundToInt() * 90).coerceIn(180, 1080)
-                            range = snapped
-                            viewModel.settings.steeringRange = snapped
-                        },
-                        valueRange = 180f..1080f,
-                        steps = 9,
-                    )
-
-                    if (mode == SteeringMode.TILT) {
-                        Spacer(Modifier.height(10.dp))
-                        SettingLabel("Tilt sensitivity", "${"%.1f".format(sensitivity)}x")
-                        Slider(
-                            value = sensitivity,
-                            onValueChange = {
-                                sensitivity = it
-                                viewModel.settings.tiltSensitivity = it
-                            },
-                            valueRange = 0.5f..3f,
-                        )
-                    }
-
-                    if (mode == SteeringMode.TOUCH) {
-                        Spacer(Modifier.height(10.dp))
-                        Text(
-                            "Touch wheel return",
-                            color = DriveTextMuted,
-                            style = MaterialTheme.typography.labelLarge,
-                        )
-                        Spacer(Modifier.height(8.dp))
-                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            ReturnMode.values().forEach { item ->
-                                FilterChip(
-                                    selected = returnMode == item,
-                                    onClick = {
-                                        returnMode = item
-                                        viewModel.settings.touchReturnMode = item
-                                    },
-                                    label = { Text(item.displayName()) },
-                                )
-                            }
-                        }
-                    }
                 }
+            }
 
-                SettingsCard(
-                    title = "Performance & feedback",
-                    subtitle = "Latency-sensitive options only affect the controller path.",
-                    modifier = Modifier.weight(1f),
+            SettingsCard(
+                title = "Performance & feedback",
+                subtitle = "Latency-sensitive options only affect the controller path.",
+                modifier = Modifier.weight(1f),
+            ) {
+                SettingsToggleRow(
+                    icon = { Icon(Icons.Rounded.Bolt, null, tint = DriveAccent) },
+                    title = "Adaptive low latency",
+                    description = "Keeps a 100 Hz heartbeat and sends fresh input early while controls are moving.",
+                    checked = lowLatency,
+                    onCheckedChange = {
+                        lowLatency = it
+                        viewModel.settings.lowLatencyMode = it
+                    },
+                )
+                HorizontalDivider(color = DriveBorder.copy(alpha = 0.65f))
+                SettingsToggleRow(
+                    icon = { Icon(Icons.Rounded.Vibration, null, tint = DriveAccent) },
+                    title = "Haptic feedback",
+                    description = "Tactile confirmation for shifts, handbrake and recenter.",
+                    checked = haptics,
+                    onCheckedChange = {
+                        haptics = it
+                        viewModel.setHapticsEnabled(it)
+                    },
+                )
+
+                Spacer(Modifier.height(6.dp))
+                Surface(
+                    color = DriveAccentMuted.copy(alpha = 0.55f),
+                    shape = RoundedCornerShape(16.dp),
                 ) {
-                    SettingsToggleRow(
-                        icon = { Icon(Icons.Rounded.Bolt, null, tint = DriveAccent) },
-                        title = "Adaptive low latency",
-                        description = "100 Hz heartbeat with input-triggered fast packets while steering.",
-                        checked = lowLatency,
-                        onCheckedChange = {
-                            lowLatency = it
-                            viewModel.settings.lowLatencyMode = it
-                        },
-                    )
-                    HorizontalDivider(color = DriveBorder.copy(alpha = 0.65f))
-                    SettingsToggleRow(
-                        icon = { Icon(Icons.Rounded.Vibration, null, tint = DriveAccent) },
-                        title = "Haptic feedback",
-                        description = "Shift, handbrake and center confirmation feedback.",
-                        checked = haptics,
-                        onCheckedChange = {
-                            haptics = it
-                            viewModel.setHapticsEnabled(it)
-                        },
-                    )
-
-                    Spacer(Modifier.height(8.dp))
-                    Surface(
-                        color = DriveAccentMuted.copy(alpha = 0.55f),
-                        shape = RoundedCornerShape(16.dp),
+                    Row(
+                        modifier = Modifier.padding(14.dp),
+                        horizontalArrangement = Arrangement.spacedBy(10.dp),
+                        verticalAlignment = Alignment.Top,
                     ) {
-                        Row(
-                            modifier = Modifier.padding(14.dp),
-                            horizontalArrangement = Arrangement.spacedBy(10.dp),
-                            verticalAlignment = Alignment.Top,
-                        ) {
-                            Icon(Icons.Rounded.Speed, null, tint = DriveAccent, modifier = Modifier.size(19.dp))
-                            Text(
-                                text = "Low latency uses the fastest unbatched sensor stream on a dedicated sensor thread. UI rendering is sampled separately so it cannot block steering updates.",
-                                color = DriveTextMuted,
-                                style = MaterialTheme.typography.bodyMedium,
-                            )
-                        }
+                        Icon(
+                            imageVector = Icons.Rounded.Speed,
+                            contentDescription = null,
+                            tint = DriveAccent,
+                            modifier = Modifier.size(19.dp),
+                        )
+                        Text(
+                            text = "Sensor input runs on its own thread. The controller state can update faster than the visual UI, so rendering cannot hold back steering packets.",
+                            color = DriveTextMuted,
+                            style = MaterialTheme.typography.bodyMedium,
+                        )
                     }
                 }
             }
-            Spacer(Modifier.height(10.dp))
         }
     }
 }
@@ -447,9 +435,8 @@ fun ControllerScreen(viewModel: ControllerViewModel, onDisconnect: () -> Unit) {
             .windowInsetsPadding(WindowInsets.safeDrawing),
     ) {
         val compact = maxHeight < 420.dp
-        val pedalHeight = if (compact) 205.dp else 285.dp
-        val centerHeight = if (compact) 205.dp else 285.dp
-        val bottomPadding = if (compact) 8.dp else 14.dp
+        val pedalHeight = if (compact) 196.dp else 276.dp
+        val centerHeight = if (compact) 196.dp else 276.dp
 
         ControllerHud(
             isConnected = isConnected,
@@ -471,15 +458,15 @@ fun ControllerScreen(viewModel: ControllerViewModel, onDisconnect: () -> Unit) {
                 .padding(
                     start = 14.dp,
                     end = 14.dp,
-                    top = if (compact) 44.dp else 54.dp,
-                    bottom = if (compact) 66.dp else 82.dp,
+                    top = if (compact) 46.dp else 56.dp,
+                    bottom = if (compact) 68.dp else 80.dp,
                 ),
-            horizontalArrangement = Arrangement.spacedBy(if (compact) 10.dp else 16.dp),
+            horizontalArrangement = Arrangement.spacedBy(if (compact) 8.dp else 14.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Row(
                 modifier = Modifier.height(pedalHeight),
-                horizontalArrangement = Arrangement.spacedBy(if (compact) 8.dp else 10.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
                 AnalogSlider(
                     value = state.clutch,
@@ -501,24 +488,22 @@ fun ControllerScreen(viewModel: ControllerViewModel, onDisconnect: () -> Unit) {
                     .height(centerHeight),
                 contentAlignment = Alignment.Center,
             ) {
-                when (mode) {
-                    SteeringMode.TOUCH -> TouchWheel(
+                if (mode == SteeringMode.TOUCH) {
+                    TouchWheel(
                         currentAngle = state.steering * (range / 2f),
                         onAngleDelta = viewModel::handleTouchWheelDelta,
                         onRelease = viewModel::handleTouchWheelRelease,
                         modifier = Modifier.fillMaxHeight(),
                     )
-
-                    SteeringMode.MOTION,
-                    SteeringMode.TILT,
-                    -> SteeringReadout(
+                } else {
+                    SteeringReadout(
                         steering = state.steering,
                         range = range,
                         mode = mode,
-                        sensorAvailable = when (mode) {
-                            SteeringMode.MOTION -> viewModel.sensorHandler.hasRotationSensor
-                            SteeringMode.TILT -> viewModel.sensorHandler.hasAccelSensor
-                            SteeringMode.TOUCH -> true
+                        sensorAvailable = if (mode == SteeringMode.MOTION) {
+                            viewModel.sensorHandler.hasRotationSensor
+                        } else {
+                            viewModel.sensorHandler.hasAccelSensor
                         },
                         compact = compact,
                     )
@@ -527,7 +512,7 @@ fun ControllerScreen(viewModel: ControllerViewModel, onDisconnect: () -> Unit) {
 
             Row(
                 modifier = Modifier.height(pedalHeight),
-                horizontalArrangement = Arrangement.spacedBy(if (compact) 8.dp else 10.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
                 AnalogSlider(
                     value = state.brake,
@@ -544,14 +529,14 @@ fun ControllerScreen(viewModel: ControllerViewModel, onDisconnect: () -> Unit) {
             }
         }
 
-        if (connectionError != null && !isConnected) {
+        if (!isConnected && connectionError != null) {
             Surface(
                 modifier = Modifier
                     .align(Alignment.TopCenter)
                     .padding(top = if (compact) 54.dp else 62.dp),
                 color = DriveDanger.copy(alpha = 0.12f),
                 shape = RoundedCornerShape(12.dp),
-                border = androidx.compose.foundation.BorderStroke(1.dp, DriveDanger.copy(alpha = 0.35f)),
+                border = BorderStroke(1.dp, DriveDanger.copy(alpha = 0.35f)),
             ) {
                 Text(
                     text = connectionError ?: "",
@@ -564,49 +549,62 @@ fun ControllerScreen(viewModel: ControllerViewModel, onDisconnect: () -> Unit) {
             }
         }
 
-        Row(
+        ActionBar(
+            viewModel = viewModel,
+            compact = compact,
             modifier = Modifier
                 .align(Alignment.BottomCenter)
                 .fillMaxWidth()
-                .padding(horizontal = 14.dp, vertical = bottomPadding),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
+                .padding(horizontal = 14.dp, vertical = if (compact) 7.dp else 12.dp),
+        )
+    }
+}
+
+@Composable
+private fun ActionBar(
+    viewModel: ControllerViewModel,
+    compact: Boolean,
+    modifier: Modifier = Modifier,
+) {
+    Row(
+        modifier = modifier,
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        ControllerButton(
+            label = "SHIFT −",
+            onPress = { viewModel.updateButton(ButtonInput.SHIFT_DOWN, true) },
+            onRelease = { viewModel.updateButton(ButtonInput.SHIFT_DOWN, false) },
+            modifier = Modifier.width(if (compact) 90.dp else 108.dp),
+        )
+
+        Row(horizontalArrangement = Arrangement.spacedBy(if (compact) 7.dp else 10.dp)) {
             ControllerButton(
-                label = "SHIFT −",
-                onPress = { viewModel.updateButton(ButtonInput.SHIFT_DOWN, true) },
-                onRelease = { viewModel.updateButton(ButtonInput.SHIFT_DOWN, false) },
-                modifier = Modifier.width(if (compact) 92.dp else 108.dp),
+                label = "HORN",
+                onPress = { viewModel.updateButton(ButtonInput.HORN, true) },
+                onRelease = { viewModel.updateButton(ButtonInput.HORN, false) },
             )
-
-            Row(horizontalArrangement = Arrangement.spacedBy(if (compact) 8.dp else 10.dp)) {
-                ControllerButton(
-                    label = "HORN",
-                    onPress = { viewModel.updateButton(ButtonInput.HORN, true) },
-                    onRelease = { viewModel.updateButton(ButtonInput.HORN, false) },
-                )
-                ControllerButton(
-                    label = "CENTER",
-                    onPress = {
-                        viewModel.updateButton(ButtonInput.RESET, true)
-                        viewModel.calibrate()
-                    },
-                    onRelease = { viewModel.updateButton(ButtonInput.RESET, false) },
-                )
-                ControllerButton(
-                    label = "CAM",
-                    onPress = { viewModel.updateButton(ButtonInput.CAMERA, true) },
-                    onRelease = { viewModel.updateButton(ButtonInput.CAMERA, false) },
-                )
-            }
-
             ControllerButton(
-                label = "SHIFT +",
-                onPress = { viewModel.updateButton(ButtonInput.SHIFT_UP, true) },
-                onRelease = { viewModel.updateButton(ButtonInput.SHIFT_UP, false) },
-                modifier = Modifier.width(if (compact) 92.dp else 108.dp),
+                label = "CENTER",
+                onPress = {
+                    viewModel.updateButton(ButtonInput.RESET, true)
+                    viewModel.calibrate()
+                },
+                onRelease = { viewModel.updateButton(ButtonInput.RESET, false) },
+            )
+            ControllerButton(
+                label = "CAM",
+                onPress = { viewModel.updateButton(ButtonInput.CAMERA, true) },
+                onRelease = { viewModel.updateButton(ButtonInput.CAMERA, false) },
             )
         }
+
+        ControllerButton(
+            label = "SHIFT +",
+            onPress = { viewModel.updateButton(ButtonInput.SHIFT_UP, true) },
+            onRelease = { viewModel.updateButton(ButtonInput.SHIFT_UP, false) },
+            modifier = Modifier.width(if (compact) 90.dp else 108.dp),
+        )
     }
 }
 
@@ -622,9 +620,9 @@ private fun ControllerHud(
 ) {
     Surface(
         modifier = modifier,
-        color = DriveSurface.copy(alpha = 0.94f),
+        color = DriveSurface.copy(alpha = 0.95f),
         shape = RoundedCornerShape(18.dp),
-        border = androidx.compose.foundation.BorderStroke(1.dp, DriveBorder),
+        border = BorderStroke(1.dp, DriveBorder),
     ) {
         Row(
             modifier = Modifier.padding(start = 12.dp, end = 6.dp, top = 7.dp, bottom = 7.dp),
@@ -639,7 +637,6 @@ private fun ControllerHud(
             StatusPill("RTT", if (isConnected) "${latency} ms" else "—", latencyColor(latency, isConnected))
             StatusPill("TX", if (packetRate > 0) "$packetRate Hz" else "—", DriveAccent)
             StatusPill("MODE", mode.displayName().uppercase(), DriveTextMuted)
-
             Spacer(Modifier.weight(1f))
             Text(
                 text = "STEER ${if (steering >= 0f) "+" else ""}${(steering * 100f).roundToInt()}%",
@@ -675,13 +672,13 @@ private fun SteeringReadout(
     Surface(
         modifier = Modifier
             .fillMaxHeight()
-            .fillMaxWidth(0.78f),
+            .fillMaxWidth(0.8f),
         color = DriveSurface,
         shape = RoundedCornerShape(26.dp),
-        border = androidx.compose.foundation.BorderStroke(1.dp, DriveBorder),
+        border = BorderStroke(1.dp, DriveBorder),
     ) {
         Column(
-            modifier = Modifier.padding(horizontal = 24.dp, vertical = if (compact) 16.dp else 22.dp),
+            modifier = Modifier.padding(horizontal = 24.dp, vertical = if (compact) 14.dp else 20.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Center,
         ) {
@@ -689,13 +686,13 @@ private fun SteeringReadout(
                 text = mode.displayName().uppercase(),
                 color = DriveTextFaint,
                 style = MaterialTheme.typography.labelMedium,
-                letterSpacing = 1.4.sp,
+                letterSpacing = 1.3.sp,
             )
-            Spacer(Modifier.height(if (compact) 4.dp else 8.dp))
+            Spacer(Modifier.height(if (compact) 3.dp else 7.dp))
             Text(
                 text = "${angle.roundToInt()}°",
                 color = DriveText,
-                fontSize = if (compact) 46.sp else 64.sp,
+                fontSize = if (compact) 44.sp else 62.sp,
                 fontWeight = FontWeight.Bold,
                 letterSpacing = (-1).sp,
             )
@@ -703,15 +700,15 @@ private fun SteeringReadout(
                 text = direction,
                 color = if (abs(steering) < 0.015f) DriveTextFaint else DriveAccent,
                 style = MaterialTheme.typography.labelLarge,
-                letterSpacing = 1.2.sp,
+                letterSpacing = 1.1.sp,
             )
-            Spacer(Modifier.height(if (compact) 8.dp else 14.dp))
-            SteeringMeter(steering = steering)
+            Spacer(Modifier.height(if (compact) 7.dp else 12.dp))
+            SteeringMeter(steering)
 
             if (!sensorAvailable) {
-                Spacer(Modifier.height(8.dp))
+                Spacer(Modifier.height(7.dp))
                 Text(
-                    text = "Required sensor is not available on this device.",
+                    text = "Required steering sensor is unavailable.",
                     color = DriveDanger,
                     style = MaterialTheme.typography.labelMedium,
                 )
@@ -722,29 +719,36 @@ private fun SteeringReadout(
 
 @Composable
 private fun SteeringMeter(steering: Float) {
-    Box(
+    Canvas(
         modifier = Modifier
             .fillMaxWidth()
-            .height(8.dp)
-            .background(DriveSurfaceRaised, RoundedCornerShape(999.dp)),
+            .height(10.dp),
     ) {
-        Box(
-            modifier = Modifier
-                .align(Alignment.Center)
-                .width(2.dp)
-                .fillMaxHeight()
-                .background(DriveTextFaint),
+        val y = size.height / 2f
+        val stroke = 6.dp.toPx()
+        drawLine(
+            color = DriveSurfaceRaised,
+            start = Offset(0f, y),
+            end = Offset(size.width, y),
+            strokeWidth = stroke,
+            cap = StrokeCap.Round,
         )
-        val widthFraction = abs(steering).coerceIn(0f, 1f) / 2f
-        if (widthFraction > 0f) {
-            Box(
-                modifier = Modifier
-                    .align(if (steering < 0f) Alignment.CenterEnd else Alignment.CenterStart)
-                    .fillMaxWidth(widthFraction)
-                    .fillMaxHeight()
-                    .background(DriveAccent, RoundedCornerShape(999.dp)),
-            )
-        }
+        val centerX = size.width / 2f
+        val targetX = centerX + centerX * steering.coerceIn(-1f, 1f)
+        drawLine(
+            color = DriveAccent,
+            start = Offset(centerX, y),
+            end = Offset(targetX, y),
+            strokeWidth = stroke,
+            cap = StrokeCap.Round,
+        )
+        drawLine(
+            color = DriveTextFaint,
+            start = Offset(centerX, 0f),
+            end = Offset(centerX, size.height),
+            strokeWidth = 2.dp.toPx(),
+            cap = StrokeCap.Round,
+        )
     }
 }
 
@@ -756,7 +760,7 @@ private fun FeatureChip(
     Surface(
         color = DriveSurfaceRaised,
         shape = RoundedCornerShape(999.dp),
-        border = androidx.compose.foundation.BorderStroke(1.dp, DriveBorder),
+        border = BorderStroke(1.dp, DriveBorder),
     ) {
         Row(
             modifier = Modifier.padding(horizontal = 11.dp, vertical = 7.dp),
@@ -774,13 +778,13 @@ private fun SettingsCard(
     title: String,
     subtitle: String,
     modifier: Modifier = Modifier,
-    content: @Composable Column.() -> Unit,
+    content: @Composable () -> Unit,
 ) {
     Surface(
         modifier = modifier,
         color = DriveSurface,
         shape = RoundedCornerShape(24.dp),
-        border = androidx.compose.foundation.BorderStroke(1.dp, DriveBorder),
+        border = BorderStroke(1.dp, DriveBorder),
     ) {
         Column(modifier = Modifier.padding(20.dp)) {
             Text(title, color = DriveText, style = MaterialTheme.typography.titleLarge)
@@ -835,15 +839,11 @@ private fun SettingsToggleRow(
 }
 
 @Composable
-private fun StatusPill(
-    label: String,
-    value: String?,
-    color: Color,
-) {
+private fun StatusPill(label: String, value: String?, color: Color) {
     Surface(
         color = color.copy(alpha = 0.10f),
         shape = RoundedCornerShape(999.dp),
-        border = androidx.compose.foundation.BorderStroke(1.dp, color.copy(alpha = 0.24f)),
+        border = BorderStroke(1.dp, color.copy(alpha = 0.24f)),
     ) {
         Row(
             modifier = Modifier.padding(horizontal = 9.dp, vertical = 5.dp),
