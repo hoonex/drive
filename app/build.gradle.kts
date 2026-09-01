@@ -7,7 +7,7 @@ val ciRunNumber = System.getenv("GITHUB_RUN_NUMBER")?.toIntOrNull()
 
 android {
   namespace = "com.example"
-  compileSdk = 37
+  compileSdk = 36
 
   defaultConfig {
     applicationId = "com.example"
