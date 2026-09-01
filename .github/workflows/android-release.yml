@@ -12,6 +12,7 @@ permissions:
 
 env:
   ANDROID_BUILD_TOOLS: "36.0.0"
+  PREVIEW_SIGNING_CACHE_KEY: pcwheel-android-preview-signing-v2-${{ runner.os }}
 
 jobs:
   release:
@@ -49,14 +50,14 @@ jobs:
         with:
           gradle-version: "9.5.0"
 
-      # This cache is intentionally used only in the trusted post-validation release
-      # workflow. Pull requests and feature branches never restore the update key.
+      # The preview key is only restored by this trusted post-validation workflow.
+      # Validation builds and pull requests never read it.
       - name: Restore preview update signing key
         id: preview-key-cache
-        uses: actions/cache@v4
+        uses: actions/cache/restore@v4
         with:
           path: ~/.android/debug.keystore
-          key: pcwheel-android-preview-signing-v2-${{ runner.os }}
+          key: ${{ env.PREVIEW_SIGNING_CACHE_KEY }}
 
       - name: Ensure preview update signing identity
         shell: bash
@@ -90,6 +91,15 @@ jobs:
           test -s "$RUNNER_TEMP/signing-cert-sha256.txt"
           echo "Signing certificate SHA-256: $(cat "$RUNNER_TEMP/signing-cert-sha256.txt")"
 
+      # Save immediately after generation. A later packaging/release failure must not
+      # cause the signing identity to be regenerated on the next run.
+      - name: Persist new preview update signing key
+        if: steps.preview-key-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: ~/.android/debug.keystore
+          key: ${{ env.PREVIEW_SIGNING_CACHE_KEY }}
+
       - name: Derive monotonic preview version
         shell: bash
         env:
@@ -100,9 +110,22 @@ jobs:
           echo "PCWHEEL_VERSION_CODE=$version_code" >> "$GITHUB_ENV"
           echo "PCWHEEL_VERSION_NAME=1.2.$UPSTREAM_RUN_NUMBER" >> "$GITHUB_ENV"
 
-      - name: Build signed preview APK from validated source
+      - name: Build preview APK from validated source
         shell: bash
         run: gradle --no-daemon --stacktrace :app:assembleDebug
+
+      - name: Sign preview APK with stable identity
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          "$ANDROID_HOME/build-tools/${ANDROID_BUILD_TOOLS}/apksigner" sign \
+            --ks "$HOME/.android/debug.keystore" \
+            --ks-key-alias androiddebugkey \
+            --ks-pass pass:android \
+            --key-pass pass:android \
+            --out dist/PCWheel-android-preview.apk \
+            app/build/outputs/apk/debug/app-debug.apk
 
       - name: Verify APK signature and provenance
         shell: bash
@@ -110,14 +133,11 @@ jobs:
           SOURCE_SHA: ${{ github.event.workflow_run.head_sha }}
         run: |
           set -euo pipefail
-          mkdir -p dist
-          cp app/build/outputs/apk/debug/app-debug.apk dist/PCWheel-android-preview.apk
           sha256sum dist/PCWheel-android-preview.apk | tee dist/SHA256SUMS.txt
           printf '%s\n' "$SOURCE_SHA" > dist/SOURCE_COMMIT.txt
           cp "$RUNNER_TEMP/signing-cert-sha256.txt" dist/SIGNING_CERT_SHA256.txt
 
           # apksigner's exit status is the authoritative signature verification result.
-          # Its human-readable output is not stable enough to gate on a literal word.
           "$ANDROID_HOME/build-tools/${ANDROID_BUILD_TOOLS}/apksigner" verify \
             --verbose \
             --print-certs \
