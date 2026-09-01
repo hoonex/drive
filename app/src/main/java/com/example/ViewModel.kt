@@ -36,6 +36,9 @@ class ControllerViewModel(application: Application) : AndroidViewModel(applicati
     private var returnJob: Job? = null
 
     @Volatile
+    private var controllerRequested = false
+
+    @Volatile
     private var controllerRunning = false
 
     @Volatile
@@ -68,8 +71,31 @@ class ControllerViewModel(application: Application) : AndroidViewModel(applicati
     }
 
     fun startController() {
+        controllerRequested = true
+        startControllerInternal()
+    }
+
+    fun stopController() {
+        controllerRequested = false
+        stopControllerInternal(resetInputs = true)
+    }
+
+    /** Stop sensor/network work while the Activity is not visible without forgetting the controller screen. */
+    fun pauseControllerForBackground() {
+        if (!controllerRunning) return
+        stopControllerInternal(resetInputs = true)
+    }
+
+    /** Restore the controller automatically after returning from Home, lock screen or another Activity. */
+    fun resumeControllerIfRequested() {
+        if (controllerRequested && !controllerRunning) {
+            startControllerInternal()
+        }
+    }
+
+    private fun startControllerInternal() {
         if (controllerRunning) return
-        stopController(resetInputs = false)
+        stopControllerInternal(resetInputs = false)
         controllerRunning = true
 
         activeSteeringMode = settings.steeringMode
@@ -124,11 +150,7 @@ class ControllerViewModel(application: Application) : AndroidViewModel(applicati
         }
     }
 
-    fun stopController() {
-        stopController(resetInputs = true)
-    }
-
-    private fun stopController(resetInputs: Boolean) {
+    private fun stopControllerInternal(resetInputs: Boolean) {
         controllerRunning = false
         sensorHandler.stop()
         returnJob?.cancel()
@@ -242,7 +264,8 @@ class ControllerViewModel(application: Application) : AndroidViewModel(applicati
     }
 
     override fun onCleared() {
-        stopController(resetInputs = true)
+        controllerRequested = false
+        stopControllerInternal(resetInputs = true)
         sensorHandler.close()
         super.onCleared()
     }
