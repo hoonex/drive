@@ -199,7 +199,9 @@ class UdpClient(
     val lastError = MutableStateFlow<String?>(null)
 
     fun requestImmediateSend() {
-        sendSignal.trySend(Unit)
+        if (lowLatencyMode) {
+            sendSignal.trySend(Unit)
+        }
     }
 
     suspend fun start() = withContext(Dispatchers.IO) {
@@ -238,9 +240,18 @@ class UdpClient(
             var windowStartNs = nextHeartbeatNs
             var packetsInWindow = 0
 
+            fun publishPacketRateIfDue(nowNs: Long) {
+                if (nowNs - windowStartNs < 1_000_000_000L) return
+                val elapsedSeconds = (nowNs - windowStartNs) / 1_000_000_000.0
+                packetRate.value = (packetsInWindow / elapsedSeconds).toInt()
+                packetsInWindow = 0
+                windowStartNs = nowNs
+            }
+
             try {
                 while (isActive) {
                     val nowNs = SystemClock.elapsedRealtimeNanos()
+                    publishPacketRateIfDue(nowNs)
                     val waitNs = nextHeartbeatNs - nowNs
 
                     if (waitNs > 0L) {
@@ -251,16 +262,15 @@ class UdpClient(
                         } ?: false
 
                         if (inputChanged) {
-                            if (lowLatencyMode) {
-                                val signalNowNs = SystemClock.elapsedRealtimeNanos()
-                                if (lastSendNs == 0L || signalNowNs - lastSendNs >= FAST_PATH_MIN_NS) {
-                                    if (sendState(datagramSocket, packetBuffer, outboundPacket, signalNowNs)) {
-                                        packetsInWindow++
-                                        lastSendNs = signalNowNs
-                                        nextHeartbeatNs = signalNowNs + BASE_PERIOD_NS
-                                    }
+                            val signalNowNs = SystemClock.elapsedRealtimeNanos()
+                            if (lastSendNs == 0L || signalNowNs - lastSendNs >= FAST_PATH_MIN_NS) {
+                                if (sendState(datagramSocket, packetBuffer, outboundPacket, signalNowNs)) {
+                                    packetsInWindow++
+                                    lastSendNs = signalNowNs
+                                    nextHeartbeatNs = signalNowNs + BASE_PERIOD_NS
                                 }
                             }
+                            publishPacketRateIfDue(signalNowNs)
                             continue
                         }
                     }
@@ -271,14 +281,7 @@ class UdpClient(
                         lastSendNs = sendNowNs
                     }
                     nextHeartbeatNs = sendNowNs + BASE_PERIOD_NS
-
-                    val rateNowNs = SystemClock.elapsedRealtimeNanos()
-                    if (rateNowNs - windowStartNs >= 1_000_000_000L) {
-                        val elapsedSeconds = (rateNowNs - windowStartNs) / 1_000_000_000.0
-                        packetRate.value = (packetsInWindow / elapsedSeconds).toInt()
-                        packetsInWindow = 0
-                        windowStartNs = rateNowNs
-                    }
+                    publishPacketRateIfDue(sendNowNs)
                 }
             } catch (e: CancellationException) {
                 throw e
