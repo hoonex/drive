@@ -3,16 +3,18 @@ plugins {
   alias(libs.plugins.kotlin.compose)
 }
 
+val ciRunNumber = System.getenv("GITHUB_RUN_NUMBER")?.toIntOrNull()
+
 android {
   namespace = "com.example"
-  compileSdk = 36
+  compileSdk = 37
 
   defaultConfig {
     applicationId = "com.example"
     minSdk = 24
     targetSdk = 36
-    versionCode = 2
-    versionName = "1.1.0"
+    versionCode = (ciRunNumber ?: 3).coerceAtLeast(3)
+    versionName = if (ciRunNumber != null) "1.2.$ciRunNumber" else "1.2.0"
 
     testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
   }
