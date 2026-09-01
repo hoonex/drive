@@ -15,6 +15,7 @@ import kotlin.math.abs
 
 class ControllerViewModel(application: Application) : AndroidViewModel(application) {
     val settings = SettingsRepository(application)
+    val uiSettings = ControllerUiPreferences(application)
     val sensorHandler = SensorHandler(application)
     val haptics = HapticManager(application)
 
