@@ -4,7 +4,6 @@ on:
   push:
     branches:
       - main
-      - feat/production-low-latency-ux
       - ulw/drive-1.2-production-upgrade
     paths:
       - "app/**"
@@ -12,6 +11,7 @@ on:
       - "settings.gradle.kts"
       - "gradle/**"
       - ".github/workflows/android-build.yml"
+      - ".github/workflows/android-release.yml"
   pull_request:
     paths:
       - "app/**"
@@ -19,10 +19,11 @@ on:
       - "settings.gradle.kts"
       - "gradle/**"
       - ".github/workflows/android-build.yml"
+      - ".github/workflows/android-release.yml"
   workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   build:
@@ -54,53 +55,23 @@ jobs:
         with:
           gradle-version: "9.5.0"
 
-      - name: Restore stable preview signing key
-        uses: actions/cache@v4
-        with:
-          path: ~/.android/debug.keystore
-          key: pcwheel-android-preview-signing-v1
-
       - name: Unit tests, lint and debug APK
         run: gradle --no-daemon --stacktrace :app:testDebugUnitTest :app:lintDebug :app:assembleDebug
 
-      - name: Prepare APK asset
+      - name: Prepare validation artifact
         shell: bash
         run: |
           mkdir -p dist
-          cp app/build/outputs/apk/debug/app-debug.apk dist/PCWheel-android-preview.apk
-          sha256sum dist/PCWheel-android-preview.apk | tee dist/SHA256SUMS.txt
+          cp app/build/outputs/apk/debug/app-debug.apk dist/PCWheel-android-validation.apk
+          sha256sum dist/PCWheel-android-validation.apk | tee dist/SHA256SUMS.txt
           printf '%s\n' "$GITHUB_SHA" > dist/SOURCE_COMMIT.txt
 
-      - name: Upload APK artifact
+      - name: Upload validation artifact
         uses: actions/upload-artifact@v4
         with:
-          name: PCWheel-android-preview
+          name: PCWheel-android-validation
           if-no-files-found: error
           path: |
-            dist/PCWheel-android-preview.apk
+            dist/PCWheel-android-validation.apk
             dist/SHA256SUMS.txt
             dist/SOURCE_COMMIT.txt
-
-      - name: Publish preview release
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-        shell: bash
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          set -euo pipefail
-          tag="android-preview"
-          git tag -f "$tag" "$GITHUB_SHA"
-          git push origin "refs/tags/$tag" --force
-
-          notes="Installable debug preview of PC Wheel Android.\n\nSource commit: $GITHUB_SHA\nBuild run: $GITHUB_RUN_NUMBER"
-          if gh release view "$tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
-            gh release upload "$tag" dist/PCWheel-android-preview.apk dist/SHA256SUMS.txt dist/SOURCE_COMMIT.txt --repo "$GITHUB_REPOSITORY" --clobber
-            gh release edit "$tag" --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --title "PC Wheel Android Preview" --prerelease --notes "$notes"
-          else
-            gh release create "$tag" dist/PCWheel-android-preview.apk dist/SHA256SUMS.txt dist/SOURCE_COMMIT.txt \
-              --repo "$GITHUB_REPOSITORY" \
-              --target "$GITHUB_SHA" \
-              --title "PC Wheel Android Preview" \
-              --prerelease \
-              --notes "$notes"
-          fi
