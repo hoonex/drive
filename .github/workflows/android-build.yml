@@ -41,7 +41,7 @@ jobs:
 
       - name: Install Android SDK 36
         shell: bash
-        run: yes | sdkmanager "platforms;android-36" "build-tools;36.0.0" >/dev/null
+        run: sdkmanager --install "platforms;android-36" "build-tools;36.0.0"
 
       - name: Set up Gradle 9.3.1
         uses: gradle/actions/setup-gradle@v4
