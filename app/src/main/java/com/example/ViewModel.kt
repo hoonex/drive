@@ -10,7 +10,6 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
-import java.util.concurrent.atomic.AtomicReference
 import kotlin.math.abs
 
 class ControllerViewModel(application: Application) : AndroidViewModel(application) {
@@ -19,13 +18,15 @@ class ControllerViewModel(application: Application) : AndroidViewModel(applicati
     val sensorHandler = SensorHandler(application)
     val haptics = HapticManager(application)
 
-    private val liveState = AtomicReference(ControllerState())
-    private val _controllerState = MutableStateFlow(liveState.get())
+    private val liveState = ControllerStateStore()
+    private val _controllerState = MutableStateFlow(liveState.snapshot())
     val controllerState: StateFlow<ControllerState> = _controllerState.asStateFlow()
 
     val isConnected = MutableStateFlow(false)
     val latency = MutableStateFlow(0L)
     val packetRate = MutableStateFlow(0)
+    val maxPacketGapMicros = MutableStateFlow(0L)
+    val sensorRateHz = MutableStateFlow(0)
     val connectionError = MutableStateFlow<String?>(null)
 
     private var udpClient: UdpClient? = null
@@ -33,6 +34,9 @@ class ControllerViewModel(application: Application) : AndroidViewModel(applicati
     private var uiSamplerJob: Job? = null
     private val telemetryJobs = mutableListOf<Job>()
     private var returnJob: Job? = null
+
+    @Volatile
+    private var controllerRunning = false
 
     @Volatile
     private var activeSteeringMode = settings.steeringMode
@@ -64,7 +68,9 @@ class ControllerViewModel(application: Application) : AndroidViewModel(applicati
     }
 
     fun startController() {
+        if (controllerRunning) return
         stopController(resetInputs = false)
+        controllerRunning = true
 
         activeSteeringMode = settings.steeringMode
         activeSteeringRange = settings.steeringRange
@@ -77,7 +83,7 @@ class ControllerViewModel(application: Application) : AndroidViewModel(applicati
         val client = UdpClient(
             ip = settings.ip,
             port = settings.port,
-            stateProvider = { liveState.get() },
+            stateStore = liveState,
             lowLatencyMode = settings.lowLatencyMode,
         )
         udpClient = client
@@ -92,15 +98,22 @@ class ControllerViewModel(application: Application) : AndroidViewModel(applicati
             client.packetRate.collect { packetRate.value = it }
         }
         telemetryJobs += viewModelScope.launch {
+            client.maxPacketGapMicros.collect { maxPacketGapMicros.value = it }
+        }
+        telemetryJobs += viewModelScope.launch {
             client.lastError.collect { connectionError.value = it }
         }
 
         // Sensor/network state remains hot while Compose receives display snapshots at ~30 Hz.
         uiSamplerJob = viewModelScope.launch {
             while (true) {
-                val latest = liveState.get()
+                val latest = liveState.snapshot()
                 if (_controllerState.value != latest) {
                     _controllerState.value = latest
+                }
+                val measuredSensorRate = sensorHandler.eventRateHz
+                if (sensorRateHz.value != measuredSensorRate) {
+                    sensorRateHz.value = measuredSensorRate
                 }
                 delay(33)
             }
@@ -116,6 +129,7 @@ class ControllerViewModel(application: Application) : AndroidViewModel(applicati
     }
 
     private fun stopController(resetInputs: Boolean) {
+        controllerRunning = false
         sensorHandler.stop()
         returnJob?.cancel()
         returnJob = null
@@ -131,13 +145,14 @@ class ControllerViewModel(application: Application) : AndroidViewModel(applicati
         isConnected.value = false
         latency.value = 0L
         packetRate.value = 0
+        maxPacketGapMicros.value = 0L
+        sensorRateHz.value = 0
         connectionError.value = null
 
         if (resetInputs) {
             currentSteeringAngleDeg = 0f
-            val neutral = ControllerState()
-            liveState.set(neutral)
-            _controllerState.value = neutral
+            liveState.reset()
+            _controllerState.value = liveState.snapshot()
         }
     }
 
@@ -155,46 +170,39 @@ class ControllerViewModel(application: Application) : AndroidViewModel(applicati
 
     fun updateAnalog(type: AnalogInput, value: Float) {
         val clamped = value.coerceIn(0f, 1f)
-        val oldState = liveState.get()
+        val oldHandbrake = if (type == AnalogInput.HANDBRAKE) liveState.handbrakeValue() else 0f
 
         if (type == AnalogInput.HANDBRAKE && haptics.enabled) {
-            if (oldState.handbrake <= 0.001f && clamped > 0.001f) {
+            if (oldHandbrake <= 0.001f && clamped > 0.001f) {
                 haptics.handbrakePress()
-            } else if (oldState.handbrake > 0.001f && clamped <= 0.001f) {
+            } else if (oldHandbrake > 0.001f && clamped <= 0.001f) {
                 haptics.handbrakeRelease()
             }
         }
 
-        mutateLiveState { state ->
-            when (type) {
-                AnalogInput.THROTTLE -> state.copy(throttle = clamped)
-                AnalogInput.BRAKE -> state.copy(brake = clamped)
-                AnalogInput.CLUTCH -> state.copy(clutch = clamped)
-                AnalogInput.HANDBRAKE -> state.copy(handbrake = clamped)
-            }
+        val changed = when (type) {
+            AnalogInput.THROTTLE -> liveState.setThrottle(clamped)
+            AnalogInput.BRAKE -> liveState.setBrake(clamped)
+            AnalogInput.CLUTCH -> liveState.setClutch(clamped)
+            AnalogInput.HANDBRAKE -> liveState.setHandbrake(clamped)
         }
+        signalTransportIfChanged(changed)
     }
 
     fun updateButton(type: ButtonInput, pressed: Boolean) {
-        val oldState = liveState.get()
-        if (pressed && haptics.enabled) {
+        val mask = type.mask
+        val wasPressed = liveState.isButtonPressed(mask)
+
+        if (pressed && !wasPressed && haptics.enabled) {
             when (type) {
-                ButtonInput.SHIFT_UP -> if (!oldState.shiftUp) haptics.shiftUp()
-                ButtonInput.SHIFT_DOWN -> if (!oldState.shiftDown) haptics.shiftDown()
-                ButtonInput.HORN -> if (!oldState.horn) haptics.horn()
+                ButtonInput.SHIFT_UP -> haptics.shiftUp()
+                ButtonInput.SHIFT_DOWN -> haptics.shiftDown()
+                ButtonInput.HORN -> haptics.horn()
                 else -> Unit
             }
         }
 
-        mutateLiveState { state ->
-            when (type) {
-                ButtonInput.SHIFT_UP -> state.copy(shiftUp = pressed)
-                ButtonInput.SHIFT_DOWN -> state.copy(shiftDown = pressed)
-                ButtonInput.HORN -> state.copy(horn = pressed)
-                ButtonInput.CAMERA -> state.copy(camera = pressed)
-                ButtonInput.RESET -> state.copy(reset = pressed)
-            }
-        }
+        signalTransportIfChanged(liveState.setButton(mask, pressed))
     }
 
     fun handleTouchWheelDelta(delta: Float) {
@@ -226,19 +234,11 @@ class ControllerViewModel(application: Application) : AndroidViewModel(applicati
         currentSteeringAngleDeg = angle
         val halfRange = (activeSteeringRange.coerceAtLeast(180) / 2f).coerceAtLeast(1f)
         val normalized = (angle / halfRange).coerceIn(-1f, 1f)
-        mutateLiveState { it.copy(steering = normalized) }
+        signalTransportIfChanged(liveState.setSteering(normalized))
     }
 
-    private inline fun mutateLiveState(transform: (ControllerState) -> ControllerState) {
-        while (true) {
-            val oldState = liveState.get()
-            val newState = transform(oldState)
-            if (newState == oldState) return
-            if (liveState.compareAndSet(oldState, newState)) {
-                udpClient?.requestImmediateSend()
-                return
-            }
-        }
+    private fun signalTransportIfChanged(changed: Boolean) {
+        if (changed) udpClient?.requestImmediateSend()
     }
 
     override fun onCleared() {
@@ -249,4 +249,11 @@ class ControllerViewModel(application: Application) : AndroidViewModel(applicati
 }
 
 enum class AnalogInput { THROTTLE, BRAKE, CLUTCH, HANDBRAKE }
-enum class ButtonInput { SHIFT_UP, SHIFT_DOWN, HORN, CAMERA, RESET }
+
+enum class ButtonInput(val mask: Int) {
+    SHIFT_UP(ControllerButtonBits.SHIFT_UP),
+    SHIFT_DOWN(ControllerButtonBits.SHIFT_DOWN),
+    HORN(ControllerButtonBits.HORN),
+    CAMERA(ControllerButtonBits.CAMERA),
+    RESET(ControllerButtonBits.RESET),
+}
