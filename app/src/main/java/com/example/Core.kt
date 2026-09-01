@@ -15,6 +15,7 @@ import android.os.Vibrator
 import android.os.VibratorManager
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
@@ -177,8 +178,8 @@ class UdpClient(
     companion object {
         private const val PACKET_SIZE = 36
         private const val ECHO_SIZE = 12
-        private const val BASE_PERIOD_NS = 10_000_000L // 100 Hz heartbeat
-        private const val FAST_PATH_MIN_NS = 6_000_000L // <= ~166 Hz while input is actively changing
+        private const val BASE_PERIOD_NS = 10_000_000L
+        private const val FAST_PATH_MIN_NS = 6_000_000L
         private const val CONNECTION_TIMEOUT_NS = 750_000_000L
         private const val LATENCY_UI_PERIOD_NS = 75_000_000L
         private const val SENT_RING_SIZE = 512
@@ -279,8 +280,8 @@ class UdpClient(
                         windowStartNs = rateNowNs
                     }
                 }
-            } catch (_: CancellationException) {
-                throw CancellationException()
+            } catch (e: CancellationException) {
+                throw e
             } finally {
                 receiverJob.cancel()
                 datagramSocket.close()
@@ -321,7 +322,7 @@ class UdpClient(
         var lastEchoNs = 0L
         var lastLatencyPublishNs = 0L
 
-        while (isActive) {
+        while (currentCoroutineContext().isActive) {
             try {
                 echoPacket.length = echoBytes.size
                 datagramSocket.receive(echoPacket)
@@ -329,7 +330,7 @@ class UdpClient(
 
                 echoReader.clear()
                 val echoedSequence = echoReader.int
-                echoReader.long // Keep consuming the on-wire timestamp; RTT uses a monotonic local clock.
+                echoReader.long
 
                 val nowNs = SystemClock.elapsedRealtimeNanos()
                 lastEchoNs = nowNs
@@ -483,7 +484,6 @@ class SensorHandler(context: Context) : SensorEventListener, AutoCloseable {
             return
         }
 
-        // R_rel = R_base^T * R_current. Project its local X axis onto the XY plane.
         val r00 = baseMatrix[0] * rotationMatrix[0] +
             baseMatrix[3] * rotationMatrix[3] +
             baseMatrix[6] * rotationMatrix[6]
