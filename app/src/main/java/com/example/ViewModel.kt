@@ -94,8 +94,7 @@ class ControllerViewModel(application: Application) : AndroidViewModel(applicati
             client.lastError.collect { connectionError.value = it }
         }
 
-        // The network/sensor path stays hot, but Compose only receives a display snapshot at ~30 Hz.
-        // This prevents steering events from forcing whole-screen recomposition at sensor frequency.
+        // Sensor/network state remains hot while Compose receives display snapshots at ~30 Hz.
         uiSamplerJob = viewModelScope.launch {
             while (true) {
                 val latest = liveState.get()
@@ -123,7 +122,7 @@ class ControllerViewModel(application: Application) : AndroidViewModel(applicati
         uiSamplerJob = null
         networkJob?.cancel()
         networkJob = null
-        telemetryJobs.forEach(Job::cancel)
+        telemetryJobs.forEach { it.cancel() }
         telemetryJobs.clear()
         udpClient?.close()
         udpClient = null
@@ -135,8 +134,9 @@ class ControllerViewModel(application: Application) : AndroidViewModel(applicati
 
         if (resetInputs) {
             currentSteeringAngleDeg = 0f
-            liveState.set(ControllerState())
-            _controllerState.value = ControllerState()
+            val neutral = ControllerState()
+            liveState.set(neutral)
+            _controllerState.value = neutral
         }
     }
 
