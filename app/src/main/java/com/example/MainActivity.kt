@@ -22,7 +22,7 @@ class MainActivity : ComponentActivity() {
         var currentScreen by remember { mutableStateOf("connection") }
 
         when (currentScreen) {
-          "connection" -> ConnectionScreen(
+          "connection" -> LandscapeConnectionScreen(
             viewModel = viewModel,
             onNavigateToController = { currentScreen = "controller" },
             onNavigateToSettings = { currentScreen = "settings" }
