@@ -116,17 +116,29 @@ jobs:
           printf '%s\n' "$SOURCE_SHA" > dist/SOURCE_COMMIT.txt
           cp "$RUNNER_TEMP/signing-cert-sha256.txt" dist/SIGNING_CERT_SHA256.txt
 
+          # apksigner's exit status is the authoritative signature verification result.
+          # Its human-readable output is not stable enough to gate on a literal word.
           "$ANDROID_HOME/build-tools/${ANDROID_BUILD_TOOLS}/apksigner" verify \
             --verbose \
             --print-certs \
             dist/PCWheel-android-preview.apk \
             > "$RUNNER_TEMP/apksigner.txt"
-          grep -q 'Verifies' "$RUNNER_TEMP/apksigner.txt"
-          apk_cert="$({ sed -n 's/^Signer #1 certificate SHA-256 digest: //p' "$RUNNER_TEMP/apksigner.txt" || true; } | head -n 1 | tr '[:lower:]' '[:upper:]')"
-          key_cert="$(tr -d ':' < dist/SIGNING_CERT_SHA256.txt | tr '[:lower:]' '[:upper:]')"
-          apk_cert="$(printf '%s' "$apk_cert" | tr -d ':')"
+          cat "$RUNNER_TEMP/apksigner.txt"
+
+          apk_cert="$(
+            sed -n 's/^Signer #1 certificate SHA-256 digest: //p' "$RUNNER_TEMP/apksigner.txt" \
+              | head -n 1 \
+              | tr -d ':\r\n ' \
+              | tr '[:lower:]' '[:upper:]'
+          )"
+          key_cert="$(
+            tr -d ':\r\n ' < dist/SIGNING_CERT_SHA256.txt \
+              | tr '[:lower:]' '[:upper:]'
+          )"
           test -n "$apk_cert"
+          test -n "$key_cert"
           test "$apk_cert" = "$key_cert"
+          echo "Verified APK signing certificate SHA-256: $apk_cert"
 
       - name: Upload signed preview artifact
         uses: actions/upload-artifact@v4
