@@ -1,0 +1,6 @@
+{
+  "name": "PC Wheel",
+  "description": "Turns the device into a low-latency steering wheel for PC games.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
