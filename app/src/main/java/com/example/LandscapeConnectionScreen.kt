@@ -2,6 +2,7 @@ package com.example
 
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
@@ -24,21 +25,27 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Bolt
 import androidx.compose.material.icons.rounded.Computer
+import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material.icons.rounded.Speed
 import androidx.compose.material.icons.rounded.SportsEsports
 import androidx.compose.material.icons.rounded.Wifi
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -52,8 +59,10 @@ import com.example.ui.theme.DriveAccentMuted
 import com.example.ui.theme.DriveBackground
 import com.example.ui.theme.DriveBorder
 import com.example.ui.theme.DriveSurface
+import com.example.ui.theme.DriveSurfaceRaised
 import com.example.ui.theme.DriveText
 import com.example.ui.theme.DriveTextMuted
+import kotlinx.coroutines.launch
 
 @Composable
 fun LandscapeConnectionScreen(
@@ -63,8 +72,40 @@ fun LandscapeConnectionScreen(
 ) {
     var ip by rememberSaveable { mutableStateOf(viewModel.settings.ip) }
     var port by rememberSaveable { mutableStateOf(viewModel.settings.port.toString()) }
+    var discovered by remember { mutableStateOf<List<DiscoveredReceiver>>(emptyList()) }
+    var scanning by remember { mutableStateOf(false) }
+    var scanCompleted by remember { mutableStateOf(false) }
+    val discoveryClient = remember { ReceiverDiscoveryClient() }
+    val scope = rememberCoroutineScope()
+
     val parsedPort = port.toIntOrNull()
     val valid = ip.trim().isNotEmpty() && parsedPort != null && parsedPort in 1..65535
+
+    fun applyReceiver(receiver: DiscoveredReceiver) {
+        ip = receiver.ip
+        port = receiver.port.toString()
+    }
+
+    fun startScan() {
+        if (scanning) return
+        scope.launch {
+            scanning = true
+            val found = runCatching { discoveryClient.discover() }.getOrDefault(emptyList())
+            discovered = found
+            scanCompleted = true
+            if (found.size == 1) applyReceiver(found.first())
+            scanning = false
+        }
+    }
+
+    LaunchedEffect(Unit) {
+        scanning = true
+        val found = runCatching { discoveryClient.discover() }.getOrDefault(emptyList())
+        discovered = found
+        scanCompleted = true
+        if (found.size == 1) applyReceiver(found.first())
+        scanning = false
+    }
 
     BoxWithConstraints(
         modifier = Modifier
@@ -130,7 +171,7 @@ fun LandscapeConnectionScreen(
                 if (!compactHeight) {
                     Spacer(Modifier.height(8.dp))
                     Text(
-                        text = "Motion steering, analog pedals and a latency-first UDP controller path.",
+                        text = "Motion steering, instant pedals and a latency-first local controller path.",
                         color = DriveTextMuted,
                         style = MaterialTheme.typography.bodyLarge,
                         modifier = Modifier.widthIn(max = 460.dp),
@@ -195,7 +236,7 @@ fun LandscapeConnectionScreen(
                             )
                             if (!compactHeight) {
                                 Text(
-                                    text = "Run PC Wheel Receiver on the same local network.",
+                                    text = "Receiver discovery works automatically on the same local network.",
                                     color = DriveTextMuted,
                                     style = MaterialTheme.typography.bodyMedium,
                                 )
@@ -210,7 +251,7 @@ fun LandscapeConnectionScreen(
                         }
                     }
 
-                    Spacer(Modifier.height(if (compactHeight) 6.dp else 12.dp))
+                    Spacer(Modifier.height(if (compactHeight) 6.dp else 10.dp))
 
                     Column(
                         modifier = Modifier
@@ -218,6 +259,85 @@ fun LandscapeConnectionScreen(
                             .fillMaxWidth()
                             .verticalScroll(rememberScrollState()),
                     ) {
+                        OutlinedButton(
+                            onClick = ::startScan,
+                            enabled = !scanning,
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = RoundedCornerShape(15.dp),
+                        ) {
+                            if (scanning) {
+                                CircularProgressIndicator(
+                                    modifier = Modifier.size(17.dp),
+                                    strokeWidth = 2.dp,
+                                )
+                                Spacer(Modifier.size(8.dp))
+                                Text("Finding receiver…")
+                            } else {
+                                Icon(Icons.Rounded.Refresh, null, modifier = Modifier.size(18.dp))
+                                Spacer(Modifier.size(8.dp))
+                                Text(if (discovered.isEmpty()) "Find receiver" else "Scan again")
+                            }
+                        }
+
+                        if (discovered.isNotEmpty()) {
+                            Spacer(Modifier.height(7.dp))
+                            discovered.take(if (compactHeight) 2 else 4).forEach { receiver ->
+                                val selected = ip.trim() == receiver.ip && parsedPort == receiver.port
+                                Surface(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(bottom = 6.dp)
+                                        .clickable { applyReceiver(receiver) },
+                                    color = if (selected) DriveAccentMuted else DriveSurfaceRaised,
+                                    shape = RoundedCornerShape(14.dp),
+                                    border = BorderStroke(
+                                        1.dp,
+                                        if (selected) DriveAccent.copy(alpha = 0.55f) else DriveBorder,
+                                    ),
+                                ) {
+                                    Row(
+                                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 9.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(10.dp),
+                                    ) {
+                                        Icon(
+                                            Icons.Rounded.Computer,
+                                            null,
+                                            tint = if (selected) DriveAccent else DriveTextMuted,
+                                            modifier = Modifier.size(18.dp),
+                                        )
+                                        Column(modifier = Modifier.weight(1f)) {
+                                            Text(
+                                                receiver.name,
+                                                color = DriveText,
+                                                style = MaterialTheme.typography.labelLarge,
+                                            )
+                                            Text(
+                                                "${receiver.ip}:${receiver.port}",
+                                                color = DriveTextMuted,
+                                                style = MaterialTheme.typography.labelSmall,
+                                            )
+                                        }
+                                        if (selected) {
+                                            Text(
+                                                "SELECTED",
+                                                color = DriveAccent,
+                                                style = MaterialTheme.typography.labelSmall,
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+                        } else if (scanCompleted && !scanning) {
+                            Spacer(Modifier.height(6.dp))
+                            Text(
+                                "No receiver found automatically. Manual IP still works.",
+                                color = DriveTextMuted,
+                                style = MaterialTheme.typography.labelMedium,
+                            )
+                        }
+
+                        Spacer(Modifier.height(if (compactHeight) 6.dp else 9.dp))
                         OutlinedTextField(
                             value = ip,
                             onValueChange = { ip = it },
