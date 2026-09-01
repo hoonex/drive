@@ -30,6 +30,20 @@ jobs:
           ref: ${{ github.event.workflow_run.head_sha }}
           fetch-depth: 0
 
+      - name: Reject superseded release source
+        shell: bash
+        env:
+          SOURCE_SHA: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          set -euo pipefail
+          git fetch --no-tags origin main
+          main_sha="$(git rev-parse origin/main)"
+          if [[ "$SOURCE_SHA" != "$main_sha" ]]; then
+            echo "::error::Validated source $SOURCE_SHA was superseded by main $main_sha; refusing stale release."
+            exit 1
+          fi
+          echo "Release source is current main tip: $SOURCE_SHA"
+
       - name: Set up JDK 17
         uses: actions/setup-java@v5
         with:
