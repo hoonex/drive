@@ -21,8 +21,6 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.supervisorScope
 import kotlinx.coroutines.withContext
-import kotlinx.coroutines.withTimeoutOrNull
-import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.MutableStateFlow
 import java.net.DatagramPacket
 import java.net.DatagramSocket
@@ -31,12 +29,25 @@ import java.net.SocketException
 import java.net.SocketTimeoutException
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
+import java.util.concurrent.atomic.AtomicInteger
+import java.util.concurrent.locks.ReentrantLock
+import kotlin.concurrent.withLock
 import kotlin.math.PI
 import kotlin.math.asin
 import kotlin.math.atan2
+import kotlin.math.max
+import kotlin.math.min
 
 enum class SteeringMode { MOTION, TILT, TOUCH }
 enum class ReturnMode { SMOOTH, INSTANT, HOLD }
+
+object ControllerButtonBits {
+    const val SHIFT_UP = 1 shl 0
+    const val SHIFT_DOWN = 1 shl 1
+    const val HORN = 1 shl 2
+    const val CAMERA = 1 shl 3
+    const val RESET = 1 shl 4
+}
 
 class HapticManager(context: Context) {
     private val vibrator: Vibrator? = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
@@ -149,6 +160,16 @@ data class ControllerState(
     val camera: Boolean = false,
     val reset: Boolean = false,
 ) {
+    fun buttonMask(): Int {
+        var buttons = 0
+        if (shiftUp) buttons = buttons or ControllerButtonBits.SHIFT_UP
+        if (shiftDown) buttons = buttons or ControllerButtonBits.SHIFT_DOWN
+        if (horn) buttons = buttons or ControllerButtonBits.HORN
+        if (camera) buttons = buttons or ControllerButtonBits.CAMERA
+        if (reset) buttons = buttons or ControllerButtonBits.RESET
+        return buttons
+    }
+
     fun writeTo(buffer: ByteBuffer, sequence: Int, timestampMs: Long) {
         buffer.clear()
         buffer.putInt(sequence)
@@ -158,21 +179,117 @@ data class ControllerState(
         buffer.putFloat(brake.coerceIn(0f, 1f))
         buffer.putFloat(clutch.coerceIn(0f, 1f))
         buffer.putFloat(handbrake.coerceIn(0f, 1f))
+        buffer.putInt(buttonMask())
+    }
+}
 
-        var buttons = 0
-        if (shiftUp) buttons = buttons or (1 shl 0)
-        if (shiftDown) buttons = buttons or (1 shl 1)
-        if (horn) buttons = buttons or (1 shl 2)
-        if (camera) buttons = buttons or (1 shl 3)
-        if (reset) buttons = buttons or (1 shl 4)
-        buffer.putInt(buttons)
+/**
+ * Mutable transport state for the high-frequency control path.
+ *
+ * Sensor and touch updates write primitive volatile fields instead of allocating a new
+ * ControllerState for every event. UDP serializes these fields directly. Compose gets a
+ * ControllerState snapshot only at the UI sampling rate.
+ */
+class ControllerStateStore(initial: ControllerState = ControllerState()) {
+    @Volatile
+    private var steering = initial.steering.coerceIn(-1f, 1f)
+
+    @Volatile
+    private var throttle = initial.throttle.coerceIn(0f, 1f)
+
+    @Volatile
+    private var brake = initial.brake.coerceIn(0f, 1f)
+
+    @Volatile
+    private var clutch = initial.clutch.coerceIn(0f, 1f)
+
+    @Volatile
+    private var handbrake = initial.handbrake.coerceIn(0f, 1f)
+
+    private val buttons = AtomicInteger(initial.buttonMask())
+
+    fun steeringValue(): Float = steering
+    fun throttleValue(): Float = throttle
+    fun brakeValue(): Float = brake
+    fun clutchValue(): Float = clutch
+    fun handbrakeValue(): Float = handbrake
+
+    fun setSteering(value: Float): Boolean {
+        val clamped = value.coerceIn(-1f, 1f)
+        if (steering == clamped) return false
+        steering = clamped
+        return true
+    }
+
+    fun setThrottle(value: Float): Boolean = setUnitFloat(value, { throttle }, { throttle = it })
+    fun setBrake(value: Float): Boolean = setUnitFloat(value, { brake }, { brake = it })
+    fun setClutch(value: Float): Boolean = setUnitFloat(value, { clutch }, { clutch = it })
+    fun setHandbrake(value: Float): Boolean = setUnitFloat(value, { handbrake }, { handbrake = it })
+
+    private inline fun setUnitFloat(
+        value: Float,
+        current: () -> Float,
+        update: (Float) -> Unit,
+    ): Boolean {
+        val clamped = value.coerceIn(0f, 1f)
+        if (current() == clamped) return false
+        update(clamped)
+        return true
+    }
+
+    fun isButtonPressed(mask: Int): Boolean = buttons.get() and mask != 0
+
+    fun setButton(mask: Int, pressed: Boolean): Boolean {
+        while (true) {
+            val old = buttons.get()
+            val next = if (pressed) old or mask else old and mask.inv()
+            if (old == next) return false
+            if (buttons.compareAndSet(old, next)) return true
+        }
+    }
+
+    fun reset() {
+        steering = 0f
+        throttle = 0f
+        brake = 0f
+        clutch = 0f
+        handbrake = 0f
+        buttons.set(0)
+    }
+
+    fun snapshot(): ControllerState {
+        val mask = buttons.get()
+        return ControllerState(
+            steering = steering,
+            throttle = throttle,
+            brake = brake,
+            clutch = clutch,
+            handbrake = handbrake,
+            shiftUp = mask and ControllerButtonBits.SHIFT_UP != 0,
+            shiftDown = mask and ControllerButtonBits.SHIFT_DOWN != 0,
+            horn = mask and ControllerButtonBits.HORN != 0,
+            camera = mask and ControllerButtonBits.CAMERA != 0,
+            reset = mask and ControllerButtonBits.RESET != 0,
+        )
+    }
+
+    fun writeTo(buffer: ByteBuffer, sequence: Int, timestampMs: Long) {
+        buffer.clear()
+        buffer.putInt(sequence)
+        buffer.putLong(timestampMs)
+        buffer.putFloat(steering)
+        buffer.putFloat(throttle)
+        buffer.putFloat(brake)
+        buffer.putFloat(clutch)
+        buffer.putFloat(handbrake)
+        buffer.putInt(buttons.get())
     }
 }
 
 class UdpClient(
     private val ip: String,
     private val port: Int,
-    private val stateProvider: () -> ControllerState,
+    private val stateStore: ControllerStateStore,
     private val lowLatencyMode: Boolean,
 ) {
     companion object {
@@ -187,24 +304,35 @@ class UdpClient(
 
     private var socket: DatagramSocket? = null
     private var sequence = 0
-    private val sendSignal = Channel<Unit>(Channel.CONFLATED)
+    private val sendLock = ReentrantLock()
+    private val sendCondition = sendLock.newCondition()
     private val sentLock = Any()
     private val sentSequences = IntArray(SENT_RING_SIZE)
     private val sentAtNanos = LongArray(SENT_RING_SIZE)
     private val sentValid = BooleanArray(SENT_RING_SIZE)
 
+    @Volatile
+    private var pendingImmediateSend = false
+
+    @Volatile
+    private var closing = false
+
     val isConnected = MutableStateFlow(false)
     val latency = MutableStateFlow(0L)
     val packetRate = MutableStateFlow(0)
+    val maxPacketGapMicros = MutableStateFlow(0L)
     val lastError = MutableStateFlow<String?>(null)
 
     fun requestImmediateSend() {
-        if (lowLatencyMode) {
-            sendSignal.trySend(Unit)
+        if (!lowLatencyMode || closing) return
+        sendLock.withLock {
+            pendingImmediateSend = true
+            sendCondition.signal()
         }
     }
 
     suspend fun start() = withContext(Dispatchers.IO) {
+        closing = false
         val resolvedAddress = try {
             InetAddress.getByName(ip)
         } catch (e: Exception) {
@@ -239,49 +367,70 @@ class UdpClient(
             var nextHeartbeatNs = SystemClock.elapsedRealtimeNanos()
             var windowStartNs = nextHeartbeatNs
             var packetsInWindow = 0
+            var maxGapNsInWindow = 0L
 
-            fun publishPacketRateIfDue(nowNs: Long) {
+            fun publishTelemetryIfDue(nowNs: Long) {
                 if (nowNs - windowStartNs < 1_000_000_000L) return
                 val elapsedSeconds = (nowNs - windowStartNs) / 1_000_000_000.0
                 packetRate.value = (packetsInWindow / elapsedSeconds).toInt()
+                maxPacketGapMicros.value = maxGapNsInWindow / 1_000L
                 packetsInWindow = 0
+                maxGapNsInWindow = 0L
                 windowStartNs = nowNs
             }
 
             try {
-                while (isActive) {
+                while (currentCoroutineContext().isActive && !closing) {
                     val nowNs = SystemClock.elapsedRealtimeNanos()
-                    publishPacketRateIfDue(nowNs)
-                    val waitNs = nextHeartbeatNs - nowNs
+                    publishTelemetryIfDue(nowNs)
+
+                    val nextFastPathNs = if (
+                        lowLatencyMode && pendingImmediateSend && lastSendNs > 0L
+                    ) {
+                        lastSendNs + FAST_PATH_MIN_NS
+                    } else {
+                        Long.MAX_VALUE
+                    }
+                    val nextDueNs = min(nextHeartbeatNs, nextFastPathNs)
+                    val waitNs = nextDueNs - nowNs
 
                     if (waitNs > 0L) {
-                        val waitMs = ((waitNs + 999_999L) / 1_000_000L).coerceAtLeast(1L)
-                        val inputChanged = withTimeoutOrNull(waitMs) {
-                            sendSignal.receive()
-                            true
-                        } ?: false
-
-                        if (inputChanged) {
-                            val signalNowNs = SystemClock.elapsedRealtimeNanos()
-                            if (lastSendNs == 0L || signalNowNs - lastSendNs >= FAST_PATH_MIN_NS) {
-                                if (sendState(datagramSocket, packetBuffer, outboundPacket, signalNowNs)) {
-                                    packetsInWindow++
-                                    lastSendNs = signalNowNs
-                                    nextHeartbeatNs = signalNowNs + BASE_PERIOD_NS
-                                }
+                        sendLock.withLock {
+                            if (!closing) {
+                                sendCondition.awaitNanos(waitNs)
                             }
-                            publishPacketRateIfDue(signalNowNs)
-                            continue
                         }
+                        continue
                     }
 
                     val sendNowNs = SystemClock.elapsedRealtimeNanos()
+                    val shouldSend = sendLock.withLock {
+                        val heartbeatDue = sendNowNs >= nextHeartbeatNs
+                        val fastPathDue = lowLatencyMode &&
+                            pendingImmediateSend &&
+                            (lastSendNs == 0L || sendNowNs - lastSendNs >= FAST_PATH_MIN_NS)
+
+                        if (heartbeatDue || fastPathDue) {
+                            // This packet contains the latest state available now. A newer input arriving
+                            // after this point will set the flag again and wake the sender for the next slot.
+                            pendingImmediateSend = false
+                            true
+                        } else {
+                            false
+                        }
+                    }
+
+                    if (!shouldSend) continue
+
                     if (sendState(datagramSocket, packetBuffer, outboundPacket, sendNowNs)) {
+                        if (lastSendNs > 0L) {
+                            maxGapNsInWindow = max(maxGapNsInWindow, sendNowNs - lastSendNs)
+                        }
                         packetsInWindow++
                         lastSendNs = sendNowNs
+                        nextHeartbeatNs = sendNowNs + BASE_PERIOD_NS
                     }
-                    nextHeartbeatNs = sendNowNs + BASE_PERIOD_NS
-                    publishPacketRateIfDue(sendNowNs)
+                    publishTelemetryIfDue(sendNowNs)
                 }
             } catch (e: CancellationException) {
                 throw e
@@ -301,7 +450,7 @@ class UdpClient(
         monotonicNowNs: Long,
     ): Boolean {
         val currentSequence = sequence++
-        stateProvider().writeTo(packetBuffer, currentSequence, System.currentTimeMillis())
+        stateStore.writeTo(packetBuffer, currentSequence, System.currentTimeMillis())
 
         return try {
             datagramSocket.send(packet)
@@ -378,6 +527,11 @@ class UdpClient(
     }
 
     fun close() {
+        closing = true
+        sendLock.withLock {
+            pendingImmediateSend = false
+            sendCondition.signalAll()
+        }
         socket?.close()
         socket = null
         isConnected.value = false
@@ -385,6 +539,13 @@ class UdpClient(
 }
 
 class SensorHandler(context: Context) : SensorEventListener, AutoCloseable {
+    companion object {
+        // Transport peaks around 166 Hz, so sampling above 200 Hz only adds wakeups/heat.
+        private const val MOTION_LOW_LATENCY_US = 5_000
+        private const val TILT_LOW_LATENCY_US = 10_000
+        private const val BALANCED_SENSOR_US = 20_000
+    }
+
     private val sensorManager = context.getSystemService(Context.SENSOR_SERVICE) as SensorManager
     private val sensorThread = HandlerThread(
         "pc-wheel-sensors",
@@ -399,6 +560,10 @@ class SensorHandler(context: Context) : SensorEventListener, AutoCloseable {
     val hasRotationSensor = rotationSensor != null
     val hasAccelSensor = accelSensor != null
 
+    @Volatile
+    var eventRateHz: Int = 0
+        private set
+
     var onMotionAngleChanged: ((Float) -> Unit)? = null
     var onTiltAngleChanged: ((Float) -> Unit)? = null
 
@@ -408,6 +573,8 @@ class SensorHandler(context: Context) : SensorEventListener, AutoCloseable {
     private var previousRawAngle = 0f
     private var accumulatedAngle = 0f
     private var tiltZeroAngle = 0f
+    private var eventWindowStartNs = 0L
+    private var eventsInWindow = 0
 
     @Volatile
     private var motionResetRequested = true
@@ -417,10 +584,15 @@ class SensorHandler(context: Context) : SensorEventListener, AutoCloseable {
 
     fun start(mode: SteeringMode, lowLatencyMode: Boolean) {
         stop()
-        val samplingPeriod = if (lowLatencyMode) {
-            SensorManager.SENSOR_DELAY_FASTEST
-        } else {
-            SensorManager.SENSOR_DELAY_GAME
+        eventWindowStartNs = SystemClock.elapsedRealtimeNanos()
+        eventsInWindow = 0
+        eventRateHz = 0
+
+        val samplingPeriodUs = when {
+            !lowLatencyMode -> BALANCED_SENSOR_US
+            mode == SteeringMode.MOTION -> MOTION_LOW_LATENCY_US
+            mode == SteeringMode.TILT -> TILT_LOW_LATENCY_US
+            else -> BALANCED_SENSOR_US
         }
 
         when (mode) {
@@ -430,7 +602,7 @@ class SensorHandler(context: Context) : SensorEventListener, AutoCloseable {
                     sensorManager.registerListener(
                         this,
                         it,
-                        samplingPeriod,
+                        samplingPeriodUs,
                         0,
                         sensorThreadHandler,
                     )
@@ -442,7 +614,7 @@ class SensorHandler(context: Context) : SensorEventListener, AutoCloseable {
                     sensorManager.registerListener(
                         this,
                         it,
-                        samplingPeriod,
+                        samplingPeriodUs,
                         0,
                         sensorThreadHandler,
                     )
@@ -454,6 +626,7 @@ class SensorHandler(context: Context) : SensorEventListener, AutoCloseable {
 
     fun stop() {
         sensorManager.unregisterListener(this)
+        eventRateHz = 0
     }
 
     fun calibrate(mode: SteeringMode) {
@@ -465,12 +638,25 @@ class SensorHandler(context: Context) : SensorEventListener, AutoCloseable {
     }
 
     override fun onSensorChanged(event: SensorEvent) {
+        updateEventRate()
         when (event.sensor.type) {
             Sensor.TYPE_GAME_ROTATION_VECTOR,
             Sensor.TYPE_ROTATION_VECTOR,
             -> handleRotation(event)
 
             Sensor.TYPE_ACCELEROMETER -> handleTilt(event)
+        }
+    }
+
+    private fun updateEventRate() {
+        val nowNs = SystemClock.elapsedRealtimeNanos()
+        if (eventWindowStartNs == 0L) eventWindowStartNs = nowNs
+        eventsInWindow++
+        val elapsedNs = nowNs - eventWindowStartNs
+        if (elapsedNs >= 1_000_000_000L) {
+            eventRateHz = ((eventsInWindow * 1_000_000_000L) / elapsedNs).toInt()
+            eventsInWindow = 0
+            eventWindowStartNs = nowNs
         }
     }
 
