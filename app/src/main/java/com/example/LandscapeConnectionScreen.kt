@@ -235,11 +235,9 @@ fun LandscapeConnectionScreen(
                             modifier = Modifier.fillMaxWidth(),
                             singleLine = true,
                             label = { Text("UDP port") },
-                            supportingText = if (compactHeight) {
-                                null
-                            } else {
-                                { { Text("Receiver default: 26760") } }
-                            }?.invoke(),
+                            supportingText = if (compactHeight) null else {
+                                { Text("Receiver default: 26760") }
+                            },
                             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                             leadingIcon = { Icon(Icons.Rounded.Wifi, null) },
                             isError = port.isNotEmpty() && (parsedPort == null || parsedPort !in 1..65535),
