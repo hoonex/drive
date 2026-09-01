@@ -422,13 +422,16 @@ class UdpClient(
 
                     if (!shouldSend) continue
 
-                    if (sendState(datagramSocket, packetBuffer, outboundPacket, sendNowNs)) {
+                    val sent = sendState(datagramSocket, packetBuffer, outboundPacket, sendNowNs)
+                    // Advance the heartbeat deadline even when UDP send fails. Otherwise a due heartbeat
+                    // remains permanently overdue and the loop can spin at full CPU until the socket recovers.
+                    nextHeartbeatNs = sendNowNs + BASE_PERIOD_NS
+                    if (sent) {
                         if (lastSendNs > 0L) {
                             maxGapNsInWindow = max(maxGapNsInWindow, sendNowNs - lastSendNs)
                         }
                         packetsInWindow++
                         lastSendNs = sendNowNs
-                        nextHeartbeatNs = sendNowNs + BASE_PERIOD_NS
                     }
                     publishTelemetryIfDue(sendNowNs)
                 }
