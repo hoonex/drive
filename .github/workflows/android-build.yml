@@ -3,6 +3,7 @@ name: Android Build
 on:
   push:
     branches:
+      - main
       - feat/production-low-latency-ux
     paths:
       - "app/**"
@@ -88,5 +89,5 @@ jobs:
               --target "$GITHUB_SHA" \
               --title "PC Wheel Android Preview" \
               --prerelease \
-              --notes "Installable debug preview of the low-latency Android controller. Built automatically from feat/production-low-latency-ux."
+              --notes "Installable debug preview of the low-latency Android controller. Built automatically from the latest validated source."
           fi
