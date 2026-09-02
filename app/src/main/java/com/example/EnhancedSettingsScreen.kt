@@ -443,14 +443,18 @@ private fun UpdatesCard(
 
         Spacer(Modifier.height(9.dp))
         when (state) {
-            is AppUpdateState.Available -> PrimaryAction("Download ${state.info.versionName}") {
-                viewModel.downloadAvailableUpdate(ignoreWifiPolicy = true)
-            }
-            is AppUpdateState.Ready -> PrimaryAction("Install ${state.info.versionName}", viewModel::installReadyUpdate)
+            is AppUpdateState.Available -> PrimaryAction(
+                label = "Download ${state.info.versionName}",
+                action = { viewModel.downloadAvailableUpdate(ignoreWifiPolicy = true) },
+            )
+            is AppUpdateState.Ready -> PrimaryAction(
+                label = "Install ${state.info.versionName}",
+                action = viewModel::installReadyUpdate,
+            )
             is AppUpdateState.PermissionRequired -> PrimaryAction(
-                "Allow app updates",
-                viewModel::openUpdateInstallPermission,
-                DriveWarning,
+                label = "Allow app updates",
+                action = viewModel::openUpdateInstallPermission,
+                color = DriveWarning,
             )
             is AppUpdateState.Downloading -> Text(
                 "Download ${state.progress}%",
