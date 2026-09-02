@@ -46,7 +46,7 @@ class ControllerUiPreferences(context: Context) {
         set(value) = prefs.edit().putBoolean("invertSteering", value).apply()
 
     var diagnosticsEnabled: Boolean
-        get() = prefs.getBoolean("diagnosticsEnabled", true)
+        get() = prefs.getBoolean("diagnosticsEnabled", false)
         set(value) = prefs.edit().putBoolean("diagnosticsEnabled", value).apply()
 
     var automaticUpdates: Boolean
