@@ -17,6 +17,8 @@ class ControllerViewModel(application: Application) : AndroidViewModel(applicati
     val uiSettings = ControllerUiPreferences(application)
     val sensorHandler = SensorHandler(application)
     val haptics = HapticManager(application)
+    val updater = AppUpdater(application)
+    val updateState: StateFlow<AppUpdateState> = updater.state
 
     private val liveState = ControllerStateStore()
     private val _controllerState = MutableStateFlow(liveState.snapshot())
@@ -51,6 +53,15 @@ class ControllerViewModel(application: Application) : AndroidViewModel(applicati
     private var activeTiltSensitivity = settings.tiltSensitivity
 
     @Volatile
+    private var activeSteeringDeadzone = uiSettings.steeringDeadzone
+
+    @Volatile
+    private var activeSteeringResponse = uiSettings.steeringResponse
+
+    @Volatile
+    private var activeInvertSteering = uiSettings.invertSteering
+
+    @Volatile
     var currentSteeringAngleDeg = 0f
         private set
 
@@ -66,6 +77,15 @@ class ControllerViewModel(application: Application) : AndroidViewModel(applicati
         sensorHandler.onTiltAngleChanged = { angle ->
             if (activeSteeringMode == SteeringMode.TILT) {
                 updateSteeringFromAngle(angle * activeTiltSensitivity)
+            }
+        }
+
+        if (uiSettings.automaticUpdates) {
+            viewModelScope.launch {
+                updater.checkForUpdate(
+                    autoDownload = true,
+                    wifiOnly = uiSettings.updateWifiOnly,
+                )
             }
         }
     }
@@ -101,6 +121,9 @@ class ControllerViewModel(application: Application) : AndroidViewModel(applicati
         activeSteeringMode = settings.steeringMode
         activeSteeringRange = settings.steeringRange
         activeTiltSensitivity = settings.tiltSensitivity
+        activeSteeringDeadzone = uiSettings.steeringDeadzone
+        activeSteeringResponse = uiSettings.steeringResponse
+        activeInvertSteering = uiSettings.invertSteering
         haptics.enabled = settings.hapticsEnabled
         connectionError.value = null
 
@@ -252,10 +275,48 @@ class ControllerViewModel(application: Application) : AndroidViewModel(applicati
         }
     }
 
+    fun checkForUpdates(force: Boolean = true) {
+        viewModelScope.launch {
+            updater.checkForUpdate(
+                autoDownload = uiSettings.automaticUpdates,
+                wifiOnly = uiSettings.updateWifiOnly,
+                force = force,
+            )
+        }
+    }
+
+    fun downloadAvailableUpdate(ignoreWifiPolicy: Boolean = true) {
+        viewModelScope.launch {
+            updater.downloadAvailable(
+                ignoreWifiPolicy = ignoreWifiPolicy,
+                wifiOnly = uiSettings.updateWifiOnly,
+            )
+        }
+    }
+
+    fun installReadyUpdate() = updater.installReadyUpdate()
+
+    fun openUpdateInstallPermission() = updater.openInstallPermissionSettings()
+
+    fun resumePendingUpdateInstall() = updater.resumePendingInstall()
+
+    fun setAutomaticUpdates(enabled: Boolean) {
+        uiSettings.automaticUpdates = enabled
+        if (enabled) checkForUpdates(force = true)
+    }
+
+    fun currentAppVersionName(): String = updater.currentVersionName()
+
     private fun updateSteeringFromAngle(angle: Float) {
         currentSteeringAngleDeg = angle
         val halfRange = (activeSteeringRange.coerceAtLeast(180) / 2f).coerceAtLeast(1f)
-        val normalized = (angle / halfRange).coerceIn(-1f, 1f)
+        val raw = (angle / halfRange).coerceIn(-1f, 1f)
+        val normalized = applySteeringResponse(
+            raw = raw,
+            deadzone = activeSteeringDeadzone,
+            response = activeSteeringResponse,
+            inverted = activeInvertSteering,
+        )
         signalTransportIfChanged(liveState.setSteering(normalized))
     }
 
