@@ -32,7 +32,7 @@ class MainActivity : ComponentActivity() {
             onNavigateToController = { currentScreen = "controller" },
             onNavigateToSettings = { currentScreen = "settings" }
           )
-          "settings" -> ProductionSettingsScreen(
+          "settings" -> EnhancedSettingsScreen(
             viewModel = viewModel,
             onBack = { currentScreen = "connection" }
           )
@@ -48,6 +48,7 @@ class MainActivity : ComponentActivity() {
   override fun onStart() {
     super.onStart()
     viewModel.resumeControllerIfRequested()
+    viewModel.resumePendingUpdateInstall()
   }
 
   override fun onStop() {
