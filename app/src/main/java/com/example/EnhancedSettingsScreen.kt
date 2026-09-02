@@ -6,6 +6,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
@@ -24,7 +25,6 @@ import androidx.compose.material.icons.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.Bolt
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.Speed
-import androidx.compose.material.icons.rounded.TouchApp
 import androidx.compose.material.icons.rounded.Vibration
 import androidx.compose.material.icons.rounded.Wifi
 import androidx.compose.material3.Button
@@ -54,7 +54,6 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.ui.theme.DriveAccent
-import com.example.ui.theme.DriveAccentMuted
 import com.example.ui.theme.DriveBackground
 import com.example.ui.theme.DriveBorder
 import com.example.ui.theme.DriveDanger
@@ -577,7 +576,7 @@ private fun UpdateSettingsCard(
 private fun AdaptiveCard(
     title: String,
     subtitle: String,
-    content: @Composable Column.() -> Unit,
+    content: @Composable ColumnScope.() -> Unit,
 ) {
     Surface(
         modifier = Modifier.fillMaxWidth(),
