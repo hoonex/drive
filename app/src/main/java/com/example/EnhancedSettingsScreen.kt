@@ -49,6 +49,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -71,18 +72,18 @@ fun EnhancedSettingsScreen(
     viewModel: ControllerViewModel,
     onBack: () -> Unit,
 ) {
-    var steeringMode by remember { mutableStateOf(viewModel.settings.steeringMode) }
-    var steeringRange by remember { mutableIntStateOf(viewModel.settings.steeringRange) }
-    var tiltSensitivity by remember { mutableFloatStateOf(viewModel.settings.tiltSensitivity) }
+    var mode by remember { mutableStateOf(viewModel.settings.steeringMode) }
+    var range by remember { mutableIntStateOf(viewModel.settings.steeringRange) }
+    var tilt by remember { mutableFloatStateOf(viewModel.settings.tiltSensitivity) }
     var returnMode by remember { mutableStateOf(viewModel.settings.touchReturnMode) }
     var pedalMode by remember { mutableStateOf(viewModel.uiSettings.pedalControlMode) }
     var wheelSide by remember { mutableStateOf(viewModel.uiSettings.touchWheelSide) }
     var deadzone by remember { mutableFloatStateOf(viewModel.uiSettings.steeringDeadzone) }
     var response by remember { mutableFloatStateOf(viewModel.uiSettings.steeringResponse) }
-    var invertSteering by remember { mutableStateOf(viewModel.uiSettings.invertSteering) }
-    var diagnostics by remember { mutableStateOf(viewModel.uiSettings.diagnosticsEnabled) }
+    var inverted by remember { mutableStateOf(viewModel.uiSettings.invertSteering) }
     var lowLatency by remember { mutableStateOf(viewModel.settings.lowLatencyMode) }
     var haptics by remember { mutableStateOf(viewModel.settings.hapticsEnabled) }
+    var diagnostics by remember { mutableStateOf(viewModel.uiSettings.diagnosticsEnabled) }
     var autoUpdates by remember { mutableStateOf(viewModel.uiSettings.automaticUpdates) }
     var wifiOnly by remember { mutableStateOf(viewModel.uiSettings.updateWifiOnly) }
     val updateState by viewModel.updateState.collectAsStateWithLifecycle()
@@ -94,11 +95,11 @@ fun EnhancedSettingsScreen(
             .windowInsetsPadding(WindowInsets.safeDrawing),
     ) {
         val short = maxHeight < 390.dp
-        val twoColumns = maxWidth >= 900.dp && maxHeight >= 400.dp
+        val wide = maxWidth >= 900.dp && maxHeight >= 400.dp
         val edge = if (short) 10.dp else 16.dp
         val gap = if (short) 8.dp else 12.dp
 
-        Column(modifier = Modifier.fillMaxSize()) {
+        Column(Modifier.fillMaxSize()) {
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -109,7 +110,7 @@ fun EnhancedSettingsScreen(
                 IconButton(onClick = onBack, modifier = Modifier.size(if (short) 38.dp else 44.dp)) {
                     Icon(Icons.Rounded.ArrowBack, "Back", tint = DriveText)
                 }
-                Column(modifier = Modifier.weight(1f)) {
+                Column(Modifier.weight(1f)) {
                     Text(
                         "Controller setup",
                         color = DriveText,
@@ -117,7 +118,7 @@ fun EnhancedSettingsScreen(
                     )
                     if (!short) {
                         Text(
-                            "Input response, layout, performance and updates",
+                            "Steering feel, layout, diagnostics and updates",
                             color = DriveTextMuted,
                             style = MaterialTheme.typography.bodySmall,
                         )
@@ -138,7 +139,96 @@ fun EnhancedSettingsScreen(
                     .padding(horizontal = edge, vertical = 4.dp),
                 verticalArrangement = Arrangement.spacedBy(gap),
             ) {
-                if (twoColumns) {
+                val steeringCard: @Composable () -> Unit = {
+                    SteeringCard(
+                        mode = mode,
+                        onMode = {
+                            mode = it
+                            viewModel.settings.steeringMode = it
+                            if (haptics) viewModel.haptics.modeChange()
+                        },
+                        range = range,
+                        onRange = {
+                            range = it
+                            viewModel.settings.steeringRange = it
+                        },
+                        tilt = tilt,
+                        onTilt = {
+                            tilt = it
+                            viewModel.settings.tiltSensitivity = it
+                        },
+                        returnMode = returnMode,
+                        onReturnMode = {
+                            returnMode = it
+                            viewModel.settings.touchReturnMode = it
+                        },
+                        wheelSide = wheelSide,
+                        onWheelSide = {
+                            wheelSide = it
+                            viewModel.uiSettings.touchWheelSide = it
+                        },
+                        deadzone = deadzone,
+                        onDeadzone = {
+                            deadzone = it
+                            viewModel.uiSettings.steeringDeadzone = it
+                        },
+                        response = response,
+                        onResponse = {
+                            response = it
+                            viewModel.uiSettings.steeringResponse = it
+                        },
+                        inverted = inverted,
+                        onInverted = {
+                            inverted = it
+                            viewModel.uiSettings.invertSteering = it
+                        },
+                    )
+                }
+
+                val controlsCard: @Composable () -> Unit = {
+                    ControlsCard(
+                        pedalMode = pedalMode,
+                        onPedalMode = {
+                            pedalMode = it
+                            viewModel.uiSettings.pedalControlMode = it
+                            if (haptics) viewModel.haptics.modeChange()
+                        },
+                        lowLatency = lowLatency,
+                        onLowLatency = {
+                            lowLatency = it
+                            viewModel.settings.lowLatencyMode = it
+                        },
+                        haptics = haptics,
+                        onHaptics = {
+                            haptics = it
+                            viewModel.setHapticsEnabled(it)
+                        },
+                        diagnostics = diagnostics,
+                        onDiagnostics = {
+                            diagnostics = it
+                            viewModel.uiSettings.diagnosticsEnabled = it
+                        },
+                    )
+                }
+
+                val updateCard: @Composable () -> Unit = {
+                    UpdatesCard(
+                        viewModel = viewModel,
+                        state = updateState,
+                        autoUpdates = autoUpdates,
+                        onAutoUpdates = {
+                            autoUpdates = it
+                            viewModel.setAutomaticUpdates(it)
+                        },
+                        wifiOnly = wifiOnly,
+                        onWifiOnly = {
+                            wifiOnly = it
+                            viewModel.uiSettings.updateWifiOnly = it
+                        },
+                    )
+                }
+
+                if (wide) {
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.spacedBy(gap),
@@ -147,178 +237,19 @@ fun EnhancedSettingsScreen(
                         Column(
                             modifier = Modifier.weight(1.06f),
                             verticalArrangement = Arrangement.spacedBy(gap),
-                        ) {
-                            SteeringTuningCard(
-                                viewModel = viewModel,
-                                steeringMode = steeringMode,
-                                onSteeringModeChange = {
-                                    steeringMode = it
-                                    viewModel.settings.steeringMode = it
-                                },
-                                steeringRange = steeringRange,
-                                onSteeringRangeChange = {
-                                    steeringRange = it
-                                    viewModel.settings.steeringRange = it
-                                },
-                                tiltSensitivity = tiltSensitivity,
-                                onTiltSensitivityChange = {
-                                    tiltSensitivity = it
-                                    viewModel.settings.tiltSensitivity = it
-                                },
-                                returnMode = returnMode,
-                                onReturnModeChange = {
-                                    returnMode = it
-                                    viewModel.settings.touchReturnMode = it
-                                },
-                                wheelSide = wheelSide,
-                                onWheelSideChange = {
-                                    wheelSide = it
-                                    viewModel.uiSettings.touchWheelSide = it
-                                },
-                                deadzone = deadzone,
-                                onDeadzoneChange = {
-                                    deadzone = it
-                                    viewModel.uiSettings.steeringDeadzone = it
-                                },
-                                response = response,
-                                onResponseChange = {
-                                    response = it
-                                    viewModel.uiSettings.steeringResponse = it
-                                },
-                                invertSteering = invertSteering,
-                                onInvertChange = {
-                                    invertSteering = it
-                                    viewModel.uiSettings.invertSteering = it
-                                },
-                                compact = short,
-                            )
-                        }
-
+                        ) { steeringCard() }
                         Column(
                             modifier = Modifier.weight(0.94f),
                             verticalArrangement = Arrangement.spacedBy(gap),
                         ) {
-                            DriveControlsCard(
-                                viewModel = viewModel,
-                                pedalMode = pedalMode,
-                                onPedalModeChange = {
-                                    pedalMode = it
-                                    viewModel.uiSettings.pedalControlMode = it
-                                },
-                                lowLatency = lowLatency,
-                                onLowLatencyChange = {
-                                    lowLatency = it
-                                    viewModel.settings.lowLatencyMode = it
-                                },
-                                haptics = haptics,
-                                onHapticsChange = {
-                                    haptics = it
-                                    viewModel.setHapticsEnabled(it)
-                                },
-                                diagnostics = diagnostics,
-                                onDiagnosticsChange = {
-                                    diagnostics = it
-                                    viewModel.uiSettings.diagnosticsEnabled = it
-                                },
-                            )
-                            UpdateSettingsCard(
-                                viewModel = viewModel,
-                                state = updateState,
-                                autoUpdates = autoUpdates,
-                                onAutoUpdatesChange = {
-                                    autoUpdates = it
-                                    viewModel.setAutomaticUpdates(it)
-                                },
-                                wifiOnly = wifiOnly,
-                                onWifiOnlyChange = {
-                                    wifiOnly = it
-                                    viewModel.uiSettings.updateWifiOnly = it
-                                },
-                            )
+                            controlsCard()
+                            updateCard()
                         }
                     }
                 } else {
-                    SteeringTuningCard(
-                        viewModel = viewModel,
-                        steeringMode = steeringMode,
-                        onSteeringModeChange = {
-                            steeringMode = it
-                            viewModel.settings.steeringMode = it
-                        },
-                        steeringRange = steeringRange,
-                        onSteeringRangeChange = {
-                            steeringRange = it
-                            viewModel.settings.steeringRange = it
-                        },
-                        tiltSensitivity = tiltSensitivity,
-                        onTiltSensitivityChange = {
-                            tiltSensitivity = it
-                            viewModel.settings.tiltSensitivity = it
-                        },
-                        returnMode = returnMode,
-                        onReturnModeChange = {
-                            returnMode = it
-                            viewModel.settings.touchReturnMode = it
-                        },
-                        wheelSide = wheelSide,
-                        onWheelSideChange = {
-                            wheelSide = it
-                            viewModel.uiSettings.touchWheelSide = it
-                        },
-                        deadzone = deadzone,
-                        onDeadzoneChange = {
-                            deadzone = it
-                            viewModel.uiSettings.steeringDeadzone = it
-                        },
-                        response = response,
-                        onResponseChange = {
-                            response = it
-                            viewModel.uiSettings.steeringResponse = it
-                        },
-                        invertSteering = invertSteering,
-                        onInvertChange = {
-                            invertSteering = it
-                            viewModel.uiSettings.invertSteering = it
-                        },
-                        compact = short,
-                    )
-                    DriveControlsCard(
-                        viewModel = viewModel,
-                        pedalMode = pedalMode,
-                        onPedalModeChange = {
-                            pedalMode = it
-                            viewModel.uiSettings.pedalControlMode = it
-                        },
-                        lowLatency = lowLatency,
-                        onLowLatencyChange = {
-                            lowLatency = it
-                            viewModel.settings.lowLatencyMode = it
-                        },
-                        haptics = haptics,
-                        onHapticsChange = {
-                            haptics = it
-                            viewModel.setHapticsEnabled(it)
-                        },
-                        diagnostics = diagnostics,
-                        onDiagnosticsChange = {
-                            diagnostics = it
-                            viewModel.uiSettings.diagnosticsEnabled = it
-                        },
-                    )
-                    UpdateSettingsCard(
-                        viewModel = viewModel,
-                        state = updateState,
-                        autoUpdates = autoUpdates,
-                        onAutoUpdatesChange = {
-                            autoUpdates = it
-                            viewModel.setAutomaticUpdates(it)
-                        },
-                        wifiOnly = wifiOnly,
-                        onWifiOnlyChange = {
-                            wifiOnly = it
-                            viewModel.uiSettings.updateWifiOnly = it
-                        },
-                    )
+                    steeringCard()
+                    controlsCard()
+                    updateCard()
                 }
                 Spacer(Modifier.height(8.dp))
             }
@@ -327,64 +258,49 @@ fun EnhancedSettingsScreen(
 }
 
 @Composable
-private fun SteeringTuningCard(
-    viewModel: ControllerViewModel,
-    steeringMode: SteeringMode,
-    onSteeringModeChange: (SteeringMode) -> Unit,
-    steeringRange: Int,
-    onSteeringRangeChange: (Int) -> Unit,
-    tiltSensitivity: Float,
-    onTiltSensitivityChange: (Float) -> Unit,
+private fun SteeringCard(
+    mode: SteeringMode,
+    onMode: (SteeringMode) -> Unit,
+    range: Int,
+    onRange: (Int) -> Unit,
+    tilt: Float,
+    onTilt: (Float) -> Unit,
     returnMode: ReturnMode,
-    onReturnModeChange: (ReturnMode) -> Unit,
+    onReturnMode: (ReturnMode) -> Unit,
     wheelSide: TouchWheelSide,
-    onWheelSideChange: (TouchWheelSide) -> Unit,
+    onWheelSide: (TouchWheelSide) -> Unit,
     deadzone: Float,
-    onDeadzoneChange: (Float) -> Unit,
+    onDeadzone: (Float) -> Unit,
     response: Float,
-    onResponseChange: (Float) -> Unit,
-    invertSteering: Boolean,
-    onInvertChange: (Boolean) -> Unit,
-    compact: Boolean,
+    onResponse: (Float) -> Unit,
+    inverted: Boolean,
+    onInverted: (Boolean) -> Unit,
 ) {
-    AdaptiveCard("Steering", "Tune the physical input before it reaches the 36-byte controller packet.") {
-        SegmentedChips(
-            labels = SteeringMode.entries.map { steeringModeLabel(it) },
-            selectedIndex = SteeringMode.entries.indexOf(steeringMode),
-            onSelected = { index ->
-                onSteeringModeChange(SteeringMode.entries[index])
-                if (viewModel.settings.hapticsEnabled) viewModel.haptics.modeChange()
-            },
+    SettingsCard("Steering", "Tune input feel before it reaches the PC packet.") {
+        ChoiceRow(
+            labels = SteeringMode.entries.map(::settingsModeLabel),
+            selected = SteeringMode.entries.indexOf(mode),
+            onSelected = { onMode(SteeringMode.entries[it]) },
         )
 
-        Spacer(Modifier.height(12.dp))
-        SettingHeader("Range", "$steeringRange°")
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(5.dp),
-        ) {
-            listOf(360, 540, 720, 900, 1080).forEach { preset ->
-                FilterChip(
-                    selected = steeringRange == preset,
-                    onClick = { onSteeringRangeChange(preset) },
-                    label = { Text("$preset°", maxLines = 1) },
-                    modifier = Modifier.weight(1f),
-                )
-            }
-        }
+        Spacer(Modifier.height(10.dp))
+        ValueHeader("Range", "$range°")
+        ChoiceRow(
+            labels = listOf("360°", "540°", "720°", "900°", "1080°"),
+            selected = listOf(360, 540, 720, 900, 1080).indexOf(range),
+            onSelected = { onRange(listOf(360, 540, 720, 900, 1080)[it]) },
+        )
         Slider(
-            value = steeringRange.toFloat(),
-            onValueChange = { value ->
-                onSteeringRangeChange(((value / 90f).roundToInt() * 90).coerceIn(180, 1080))
-            },
+            value = range.toFloat(),
+            onValueChange = { onRange(((it / 90f).roundToInt() * 90).coerceIn(180, 1080)) },
             valueRange = 180f..1080f,
             steps = 9,
         )
 
-        SettingHeader("Center deadzone", "${(deadzone * 100f).roundToInt()}%")
-        Slider(value = deadzone, onValueChange = onDeadzoneChange, valueRange = 0f..0.12f)
+        ValueHeader("Center deadzone", "${(deadzone * 100f).roundToInt()}%")
+        Slider(value = deadzone, onValueChange = onDeadzone, valueRange = 0f..0.12f)
 
-        SettingHeader(
+        ValueHeader(
             "Response curve",
             when {
                 response < 0.9f -> "Quick ${"%.2f".format(response)}x"
@@ -392,131 +308,127 @@ private fun SteeringTuningCard(
                 else -> "Linear"
             },
         )
-        Slider(value = response, onValueChange = onResponseChange, valueRange = 0.55f..2f)
+        Slider(value = response, onValueChange = onResponse, valueRange = 0.55f..2f)
 
-        ToggleLine(
+        SwitchRow(
             title = "Invert steering",
-            description = "Flip left and right after deadzone and response shaping.",
-            checked = invertSteering,
-            onCheckedChange = onInvertChange,
+            description = "Flip left/right after deadzone and response shaping.",
+            checked = inverted,
+            onChecked = onInverted,
         )
 
-        if (steeringMode == SteeringMode.TILT) {
+        if (mode == SteeringMode.TILT) {
             HorizontalDivider(color = DriveBorder.copy(alpha = 0.6f))
-            SettingHeader("Tilt sensitivity", "${"%.1f".format(tiltSensitivity)}x")
-            Slider(value = tiltSensitivity, onValueChange = onTiltSensitivityChange, valueRange = 0.5f..3f)
+            ValueHeader("Tilt sensitivity", "${"%.1f".format(tilt)}x")
+            Slider(value = tilt, onValueChange = onTilt, valueRange = 0.5f..3f)
         }
 
-        if (steeringMode == SteeringMode.TOUCH) {
+        if (mode == SteeringMode.TOUCH) {
             HorizontalDivider(color = DriveBorder.copy(alpha = 0.6f))
             Text("Wheel side", color = DriveTextMuted, style = MaterialTheme.typography.labelLarge)
-            SegmentedChips(
+            ChoiceRow(
                 labels = listOf("Left", "Right"),
-                selectedIndex = if (wheelSide == TouchWheelSide.LEFT) 0 else 1,
-                onSelected = { onWheelSideChange(if (it == 0) TouchWheelSide.LEFT else TouchWheelSide.RIGHT) },
+                selected = if (wheelSide == TouchWheelSide.LEFT) 0 else 1,
+                onSelected = { onWheelSide(if (it == 0) TouchWheelSide.LEFT else TouchWheelSide.RIGHT) },
             )
-            Spacer(Modifier.height(if (compact) 6.dp else 10.dp))
+            Spacer(Modifier.height(7.dp))
             Text("Return behavior", color = DriveTextMuted, style = MaterialTheme.typography.labelLarge)
-            SegmentedChips(
+            ChoiceRow(
                 labels = listOf("Smooth", "Instant", "Hold"),
-                selectedIndex = ReturnMode.entries.indexOf(returnMode),
-                onSelected = { onReturnModeChange(ReturnMode.entries[it]) },
+                selected = ReturnMode.entries.indexOf(returnMode),
+                onSelected = { onReturnMode(ReturnMode.entries[it]) },
             )
         }
     }
 }
 
 @Composable
-private fun DriveControlsCard(
-    viewModel: ControllerViewModel,
+private fun ControlsCard(
     pedalMode: PedalControlMode,
-    onPedalModeChange: (PedalControlMode) -> Unit,
+    onPedalMode: (PedalControlMode) -> Unit,
     lowLatency: Boolean,
-    onLowLatencyChange: (Boolean) -> Unit,
+    onLowLatency: (Boolean) -> Unit,
     haptics: Boolean,
-    onHapticsChange: (Boolean) -> Unit,
+    onHaptics: (Boolean) -> Unit,
     diagnostics: Boolean,
-    onDiagnosticsChange: (Boolean) -> Unit,
+    onDiagnostics: (Boolean) -> Unit,
 ) {
-    AdaptiveCard("Driving & performance", "Keep large controls simple; expose detail only when you need it.") {
+    SettingsCard("Driving & performance", "Keep the driving screen uncluttered by default.") {
         Text("Pedals", color = DriveTextMuted, style = MaterialTheme.typography.labelLarge)
-        SegmentedChips(
+        ChoiceRow(
             labels = listOf("Arcade tap", "Analog slide"),
-            selectedIndex = if (pedalMode == PedalControlMode.ARCADE) 0 else 1,
-            onSelected = {
-                onPedalModeChange(if (it == 0) PedalControlMode.ARCADE else PedalControlMode.ANALOG)
-                if (haptics) viewModel.haptics.modeChange()
-            },
+            selected = if (pedalMode == PedalControlMode.ARCADE) 0 else 1,
+            onSelected = { onPedalMode(if (it == 0) PedalControlMode.ARCADE else PedalControlMode.ANALOG) },
         )
-        Spacer(Modifier.height(10.dp))
-        ToggleLine(
-            title = "Adaptive low latency",
-            description = "100 Hz heartbeat with faster sends while input changes.",
-            checked = lowLatency,
-            onCheckedChange = onLowLatencyChange,
-            icon = { Icon(Icons.Rounded.Bolt, null, tint = DriveAccent) },
+        Spacer(Modifier.height(8.dp))
+        SwitchRow(
+            "Adaptive low latency",
+            "100 Hz heartbeat plus faster sends while input changes.",
+            lowLatency,
+            onLowLatency,
+            { Icon(Icons.Rounded.Bolt, null, tint = DriveAccent) },
         )
-        ToggleLine(
-            title = "Haptic feedback",
-            description = "Shift, handbrake and recenter confirmation.",
-            checked = haptics,
-            onCheckedChange = onHapticsChange,
-            icon = { Icon(Icons.Rounded.Vibration, null, tint = DriveAccent) },
+        SwitchRow(
+            "Haptic feedback",
+            "Shift, handbrake and recenter confirmation.",
+            haptics,
+            onHaptics,
+            { Icon(Icons.Rounded.Vibration, null, tint = DriveAccent) },
         )
-        ToggleLine(
-            title = "Live diagnostics",
-            description = "Show sensor rate and worst packet gap while driving.",
-            checked = diagnostics,
-            onCheckedChange = onDiagnosticsChange,
-            icon = { Icon(Icons.Rounded.Speed, null, tint = DriveAccent) },
+        SwitchRow(
+            "Live diagnostics",
+            "Optional sensor Hz, TX Hz, max packet gap and RTT overlay.",
+            diagnostics,
+            onDiagnostics,
+            { Icon(Icons.Rounded.Speed, null, tint = DriveAccent) },
         )
     }
 }
 
 @Composable
-private fun UpdateSettingsCard(
+private fun UpdatesCard(
     viewModel: ControllerViewModel,
     state: AppUpdateState,
     autoUpdates: Boolean,
-    onAutoUpdatesChange: (Boolean) -> Unit,
+    onAutoUpdates: (Boolean) -> Unit,
     wifiOnly: Boolean,
-    onWifiOnlyChange: (Boolean) -> Unit,
+    onWifiOnly: (Boolean) -> Unit,
 ) {
-    AdaptiveCard("App updates", "Checks the signed GitHub preview channel and verifies the APK before Android opens installation.") {
-        ToggleLine(
-            title = "Automatic update download",
-            description = "Check on app start and prepare a verified APK in the background.",
-            checked = autoUpdates,
-            onCheckedChange = onAutoUpdatesChange,
-            icon = { Icon(Icons.Rounded.Refresh, null, tint = DriveAccent) },
+    SettingsCard("App updates", "Signed GitHub preview updates with APK verification before install.") {
+        SwitchRow(
+            "Automatic download",
+            "Check on startup and prepare newer verified builds automatically.",
+            autoUpdates,
+            onAutoUpdates,
+            { Icon(Icons.Rounded.Refresh, null, tint = DriveAccent) },
         )
-        ToggleLine(
-            title = "Wi-Fi only",
-            description = "Avoid automatic APK downloads on metered mobile data.",
-            checked = wifiOnly,
-            onCheckedChange = onWifiOnlyChange,
+        SwitchRow(
+            "Wi-Fi only",
+            "Avoid automatic APK downloads on metered networks.",
+            wifiOnly,
+            onWifiOnly,
+            { Icon(Icons.Rounded.Wifi, null, tint = DriveAccent) },
             enabled = autoUpdates,
-            icon = { Icon(Icons.Rounded.Wifi, null, tint = DriveAccent) },
         )
 
         Spacer(Modifier.height(6.dp))
         Surface(
-            color = updateStateColor(state).copy(alpha = 0.10f),
-            border = BorderStroke(1.dp, updateStateColor(state).copy(alpha = 0.34f)),
-            shape = RoundedCornerShape(16.dp),
             modifier = Modifier.fillMaxWidth(),
+            color = updateColor(state).copy(alpha = 0.10f),
+            border = BorderStroke(1.dp, updateColor(state).copy(alpha = 0.35f)),
+            shape = RoundedCornerShape(15.dp),
         ) {
             Row(
-                modifier = Modifier.padding(12.dp),
+                modifier = Modifier.padding(11.dp),
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                horizontalArrangement = Arrangement.spacedBy(9.dp),
             ) {
                 if (state is AppUpdateState.Checking || state is AppUpdateState.Downloading || state is AppUpdateState.Installing) {
-                    CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
+                    CircularProgressIndicator(modifier = Modifier.size(19.dp), strokeWidth = 2.dp)
                 } else {
-                    Icon(Icons.Rounded.Refresh, null, tint = updateStateColor(state), modifier = Modifier.size(20.dp))
+                    Icon(Icons.Rounded.Refresh, null, tint = updateColor(state), modifier = Modifier.size(19.dp))
                 }
-                Column(modifier = Modifier.weight(1f)) {
+                Column(Modifier.weight(1f)) {
                     Text(updateTitle(state), color = DriveText, style = MaterialTheme.typography.titleSmall)
                     Text(
                         updateDetail(state),
@@ -529,33 +441,22 @@ private fun UpdateSettingsCard(
             }
         }
 
-        Spacer(Modifier.height(10.dp))
+        Spacer(Modifier.height(9.dp))
         when (state) {
-            is AppUpdateState.Available -> Button(
-                onClick = { viewModel.downloadAvailableUpdate(ignoreWifiPolicy = true) },
-                modifier = Modifier.fillMaxWidth(),
-                colors = ButtonDefaults.buttonColors(containerColor = DriveAccent, contentColor = DriveBackground),
-            ) { Text("Download ${state.info.versionName}", fontWeight = FontWeight.Bold) }
-
-            is AppUpdateState.Ready -> Button(
-                onClick = viewModel::installReadyUpdate,
-                modifier = Modifier.fillMaxWidth(),
-                colors = ButtonDefaults.buttonColors(containerColor = DriveAccent, contentColor = DriveBackground),
-            ) { Text("Install ${state.info.versionName}", fontWeight = FontWeight.Bold) }
-
-            is AppUpdateState.PermissionRequired -> Button(
-                onClick = viewModel::openUpdateInstallPermission,
-                modifier = Modifier.fillMaxWidth(),
-                colors = ButtonDefaults.buttonColors(containerColor = DriveWarning, contentColor = DriveBackground),
-            ) { Text("Allow app updates", fontWeight = FontWeight.Bold) }
-
+            is AppUpdateState.Available -> PrimaryAction("Download ${state.info.versionName}") {
+                viewModel.downloadAvailableUpdate(ignoreWifiPolicy = true)
+            }
+            is AppUpdateState.Ready -> PrimaryAction("Install ${state.info.versionName}", viewModel::installReadyUpdate)
+            is AppUpdateState.PermissionRequired -> PrimaryAction(
+                "Allow app updates",
+                viewModel::openUpdateInstallPermission,
+                DriveWarning,
+            )
             is AppUpdateState.Downloading -> Text(
                 "Download ${state.progress}%",
                 color = DriveAccent,
                 style = MaterialTheme.typography.labelLarge,
-                modifier = Modifier.align(Alignment.CenterHorizontally),
             )
-
             else -> OutlinedButton(
                 onClick = { viewModel.checkForUpdates(force = true) },
                 enabled = state !is AppUpdateState.Checking && state !is AppUpdateState.Installing,
@@ -563,9 +464,9 @@ private fun UpdateSettingsCard(
             ) { Text(if (state is AppUpdateState.Failed) "Retry update check" else "Check now") }
         }
 
-        Spacer(Modifier.height(6.dp))
+        Spacer(Modifier.height(5.dp))
         Text(
-            "Android may still require one final install confirmation. Silent unattended installation is not assumed.",
+            "Android can still require a final install confirmation; silent installation is not assumed.",
             color = DriveTextFaint,
             style = MaterialTheme.typography.labelSmall,
         )
@@ -573,7 +474,7 @@ private fun UpdateSettingsCard(
 }
 
 @Composable
-private fun AdaptiveCard(
+private fun SettingsCard(
     title: String,
     subtitle: String,
     content: @Composable ColumnScope.() -> Unit,
@@ -581,35 +482,29 @@ private fun AdaptiveCard(
     Surface(
         modifier = Modifier.fillMaxWidth(),
         color = DriveSurface,
+        shape = RoundedCornerShape(21.dp),
         border = BorderStroke(1.dp, DriveBorder),
-        shape = RoundedCornerShape(22.dp),
     ) {
-        Column(modifier = Modifier.padding(16.dp)) {
+        Column(Modifier.padding(15.dp)) {
             Text(title, color = DriveText, style = MaterialTheme.typography.titleLarge)
             Text(subtitle, color = DriveTextMuted, style = MaterialTheme.typography.bodySmall)
-            Spacer(Modifier.height(12.dp))
+            Spacer(Modifier.height(11.dp))
             content()
         }
     }
 }
 
 @Composable
-private fun SegmentedChips(
-    labels: List<String>,
-    selectedIndex: Int,
-    onSelected: (Int) -> Unit,
-) {
+private fun ChoiceRow(labels: List<String>, selected: Int, onSelected: (Int) -> Unit) {
     Row(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.spacedBy(5.dp),
     ) {
         labels.forEachIndexed { index, label ->
             FilterChip(
-                selected = selectedIndex == index,
+                selected = selected == index,
                 onClick = { onSelected(index) },
-                label = {
-                    Text(label, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                },
+                label = { Text(label, maxLines = 1, overflow = TextOverflow.Ellipsis) },
                 modifier = Modifier.weight(1f),
             )
         }
@@ -617,21 +512,21 @@ private fun SegmentedChips(
 }
 
 @Composable
-private fun SettingHeader(title: String, value: String) {
-    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+private fun ValueHeader(title: String, value: String) {
+    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
         Text(title, color = DriveTextMuted, style = MaterialTheme.typography.labelLarge)
         Text(value, color = DriveAccent, style = MaterialTheme.typography.labelLarge)
     }
 }
 
 @Composable
-private fun ToggleLine(
+private fun SwitchRow(
     title: String,
     description: String,
     checked: Boolean,
-    onCheckedChange: (Boolean) -> Unit,
-    enabled: Boolean = true,
+    onChecked: (Boolean) -> Unit,
     icon: (@Composable () -> Unit)? = null,
+    enabled: Boolean = true,
 ) {
     Row(
         modifier = Modifier
@@ -643,21 +538,34 @@ private fun ToggleLine(
         if (icon != null) {
             Surface(
                 color = DriveSurfaceRaised,
-                shape = RoundedCornerShape(12.dp),
-                modifier = Modifier.size(36.dp),
-            ) {
-                Box(contentAlignment = Alignment.Center) { icon() }
-            }
+                shape = RoundedCornerShape(11.dp),
+                modifier = Modifier.size(35.dp),
+            ) { Box(contentAlignment = Alignment.Center) { icon() } }
         }
-        Column(modifier = Modifier.weight(1f)) {
+        Column(Modifier.weight(1f)) {
             Text(title, color = if (enabled) DriveText else DriveTextFaint, style = MaterialTheme.typography.titleSmall)
             Text(description, color = DriveTextMuted, style = MaterialTheme.typography.bodySmall)
         }
-        Switch(checked = checked, onCheckedChange = onCheckedChange, enabled = enabled)
+        Switch(checked = checked, onCheckedChange = onChecked, enabled = enabled)
     }
 }
 
-private fun updateStateColor(state: AppUpdateState) = when (state) {
+@Composable
+private fun PrimaryAction(label: String, action: () -> Unit, color: Color = DriveAccent) {
+    Button(
+        onClick = action,
+        modifier = Modifier.fillMaxWidth(),
+        colors = ButtonDefaults.buttonColors(containerColor = color, contentColor = DriveBackground),
+    ) { Text(label, fontWeight = FontWeight.Bold) }
+}
+
+private fun settingsModeLabel(mode: SteeringMode): String = when (mode) {
+    SteeringMode.MOTION -> "Motion"
+    SteeringMode.TILT -> "Tilt"
+    SteeringMode.TOUCH -> "Touch"
+}
+
+private fun updateColor(state: AppUpdateState): Color = when (state) {
     AppUpdateState.UpToDate -> DriveSuccess
     is AppUpdateState.Available, is AppUpdateState.Ready -> DriveAccent
     is AppUpdateState.PermissionRequired -> DriveWarning
@@ -678,13 +586,13 @@ private fun updateTitle(state: AppUpdateState): String = when (state) {
 }
 
 private fun updateDetail(state: AppUpdateState): String = when (state) {
-    AppUpdateState.Idle -> "Signed GitHub preview channel"
+    AppUpdateState.Idle -> "Signed preview channel"
     AppUpdateState.Checking -> "Reading release metadata"
     AppUpdateState.UpToDate -> "No newer signed preview is available"
-    is AppUpdateState.Available -> "${state.info.sizeBytes.coerceAtLeast(0L) / 1_000_000L} MB · tap to download"
-    is AppUpdateState.Downloading -> "${state.progress}% · SHA-256 and signer will be verified"
-    is AppUpdateState.Ready -> "APK hash, package identity and signing certificate matched"
+    is AppUpdateState.Available -> "${state.info.sizeBytes.coerceAtLeast(0L) / 1_000_000L} MB · ready to download"
+    is AppUpdateState.Downloading -> "${state.progress}% · hash and signer verification follows"
+    is AppUpdateState.Ready -> "APK hash, package and signing certificate matched"
     is AppUpdateState.PermissionRequired -> "Allow PC Wheel to request APK installation once"
-    is AppUpdateState.Installing -> "Android controls the final install confirmation"
+    is AppUpdateState.Installing -> "Android controls the final confirmation"
     is AppUpdateState.Failed -> state.message
 }
