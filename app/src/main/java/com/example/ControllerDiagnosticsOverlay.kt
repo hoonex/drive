@@ -26,6 +26,9 @@ fun ControllerDiagnosticsOverlay(
 ) {
     if (!viewModel.uiSettings.diagnosticsEnabled) return
 
+    val isConnected by viewModel.isConnected.collectAsStateWithLifecycle()
+    if (!isConnected) return
+
     val sensorRate by viewModel.sensorRateHz.collectAsStateWithLifecycle()
     val packetRate by viewModel.packetRate.collectAsStateWithLifecycle()
     val maxGapMicros by viewModel.maxPacketGapMicros.collectAsStateWithLifecycle()
