@@ -17,6 +17,7 @@ class ControllerViewModel(application: Application) : AndroidViewModel(applicati
     val uiSettings = ControllerUiPreferences(application)
     val sensorHandler = SensorHandler(application)
     val haptics = HapticManager(application)
+    val gameFeedback = GameFeedbackClient(application)
     val updater = AppUpdater(application)
     val updateState: StateFlow<AppUpdateState> = updater.state
 
@@ -33,33 +34,19 @@ class ControllerViewModel(application: Application) : AndroidViewModel(applicati
 
     private var udpClient: UdpClient? = null
     private var networkJob: Job? = null
+    private var gameFeedbackJob: Job? = null
     private var uiSamplerJob: Job? = null
     private val telemetryJobs = mutableListOf<Job>()
     private var returnJob: Job? = null
 
-    @Volatile
-    private var controllerRequested = false
-
-    @Volatile
-    private var controllerRunning = false
-
-    @Volatile
-    private var activeSteeringMode = settings.steeringMode
-
-    @Volatile
-    private var activeSteeringRange = settings.steeringRange
-
-    @Volatile
-    private var activeTiltSensitivity = settings.tiltSensitivity
-
-    @Volatile
-    private var activeSteeringDeadzone = uiSettings.steeringDeadzone
-
-    @Volatile
-    private var activeSteeringResponse = uiSettings.steeringResponse
-
-    @Volatile
-    private var activeInvertSteering = uiSettings.invertSteering
+    @Volatile private var controllerRequested = false
+    @Volatile private var controllerRunning = false
+    @Volatile private var activeSteeringMode = settings.steeringMode
+    @Volatile private var activeSteeringRange = settings.steeringRange
+    @Volatile private var activeTiltSensitivity = settings.tiltSensitivity
+    @Volatile private var activeSteeringDeadzone = uiSettings.steeringDeadzone
+    @Volatile private var activeSteeringResponse = uiSettings.steeringResponse
+    @Volatile private var activeInvertSteering = uiSettings.invertSteering
 
     @Volatile
     var currentSteeringAngleDeg = 0f
@@ -67,12 +54,10 @@ class ControllerViewModel(application: Application) : AndroidViewModel(applicati
 
     init {
         haptics.enabled = settings.hapticsEnabled
+        gameFeedback.enabled = settings.hapticsEnabled
 
         sensorHandler.onMotionAngleChanged = { angle ->
-            if (activeSteeringMode == SteeringMode.MOTION) {
-                // Physical clockwise rotation should be positive/right steering.
-                updateSteeringFromAngle(-angle)
-            }
+            if (activeSteeringMode == SteeringMode.MOTION) updateSteeringFromAngle(-angle)
         }
         sensorHandler.onTiltAngleChanged = { angle ->
             if (activeSteeringMode == SteeringMode.TILT) {
@@ -82,10 +67,7 @@ class ControllerViewModel(application: Application) : AndroidViewModel(applicati
 
         if (uiSettings.automaticUpdates) {
             viewModelScope.launch {
-                updater.checkForUpdate(
-                    autoDownload = true,
-                    wifiOnly = uiSettings.updateWifiOnly,
-                )
+                updater.checkForUpdate(autoDownload = true, wifiOnly = uiSettings.updateWifiOnly)
             }
         }
     }
@@ -100,17 +82,13 @@ class ControllerViewModel(application: Application) : AndroidViewModel(applicati
         stopControllerInternal(resetInputs = true)
     }
 
-    /** Stop sensor/network work while the Activity is not visible without forgetting the controller screen. */
     fun pauseControllerForBackground() {
         if (!controllerRunning) return
         stopControllerInternal(resetInputs = true)
     }
 
-    /** Restore the controller automatically after returning from Home, lock screen or another Activity. */
     fun resumeControllerIfRequested() {
-        if (controllerRequested && !controllerRunning) {
-            startControllerInternal()
-        }
+        if (controllerRequested && !controllerRunning) startControllerInternal()
     }
 
     private fun startControllerInternal() {
@@ -125,6 +103,7 @@ class ControllerViewModel(application: Application) : AndroidViewModel(applicati
         activeSteeringResponse = uiSettings.steeringResponse
         activeInvertSteering = uiSettings.invertSteering
         haptics.enabled = settings.hapticsEnabled
+        gameFeedback.enabled = settings.hapticsEnabled
         connectionError.value = null
 
         sensorHandler.start(activeSteeringMode, settings.lowLatencyMode)
@@ -138,7 +117,10 @@ class ControllerViewModel(application: Application) : AndroidViewModel(applicati
         udpClient = client
 
         telemetryJobs += viewModelScope.launch {
-            client.isConnected.collect { isConnected.value = it }
+            client.isConnected.collect {
+                isConnected.value = it
+                if (!it) gameFeedback.stopRumble()
+            }
         }
         telemetryJobs += viewModelScope.launch {
             client.latency.collect { latency.value = it }
@@ -153,21 +135,19 @@ class ControllerViewModel(application: Application) : AndroidViewModel(applicati
             client.lastError.collect { connectionError.value = it }
         }
 
-        // Sensor/network state remains hot while Compose receives display snapshots at ~30 Hz.
         uiSamplerJob = viewModelScope.launch {
             while (true) {
                 val latest = liveState.snapshot()
-                if (_controllerState.value != latest) {
-                    _controllerState.value = latest
-                }
+                if (_controllerState.value != latest) _controllerState.value = latest
                 val measuredSensorRate = sensorHandler.eventRateHz
-                if (sensorRateHz.value != measuredSensorRate) {
-                    sensorRateHz.value = measuredSensorRate
-                }
+                if (sensorRateHz.value != measuredSensorRate) sensorRateHz.value = measuredSensorRate
                 delay(33)
             }
         }
 
+        gameFeedbackJob = viewModelScope.launch(Dispatchers.IO) {
+            gameFeedback.start(settings.ip)
+        }
         networkJob = viewModelScope.launch(Dispatchers.IO) {
             client.start()
         }
@@ -176,16 +156,14 @@ class ControllerViewModel(application: Application) : AndroidViewModel(applicati
     private fun stopControllerInternal(resetInputs: Boolean) {
         controllerRunning = false
         sensorHandler.stop()
-        returnJob?.cancel()
-        returnJob = null
-        uiSamplerJob?.cancel()
-        uiSamplerJob = null
-        networkJob?.cancel()
-        networkJob = null
+        returnJob?.cancel(); returnJob = null
+        uiSamplerJob?.cancel(); uiSamplerJob = null
+        networkJob?.cancel(); networkJob = null
+        gameFeedbackJob?.cancel(); gameFeedbackJob = null
+        gameFeedback.close()
         telemetryJobs.forEach { it.cancel() }
         telemetryJobs.clear()
-        udpClient?.close()
-        udpClient = null
+        udpClient?.close(); udpClient = null
 
         isConnected.value = false
         latency.value = 0L
@@ -210,19 +188,16 @@ class ControllerViewModel(application: Application) : AndroidViewModel(applicati
     fun setHapticsEnabled(enabled: Boolean) {
         settings.hapticsEnabled = enabled
         haptics.enabled = enabled
+        gameFeedback.enabled = enabled
         if (enabled) haptics.modeChange()
     }
 
     fun updateAnalog(type: AnalogInput, value: Float) {
         val clamped = value.coerceIn(0f, 1f)
         val oldHandbrake = if (type == AnalogInput.HANDBRAKE) liveState.handbrakeValue() else 0f
-
         if (type == AnalogInput.HANDBRAKE && haptics.enabled) {
-            if (oldHandbrake <= 0.001f && clamped > 0.001f) {
-                haptics.handbrakePress()
-            } else if (oldHandbrake > 0.001f && clamped <= 0.001f) {
-                haptics.handbrakeRelease()
-            }
+            if (oldHandbrake <= 0.001f && clamped > 0.001f) haptics.handbrakePress()
+            else if (oldHandbrake > 0.001f && clamped <= 0.001f) haptics.handbrakeRelease()
         }
 
         val changed = when (type) {
@@ -237,7 +212,6 @@ class ControllerViewModel(application: Application) : AndroidViewModel(applicati
     fun updateButton(type: ButtonInput, pressed: Boolean) {
         val mask = type.mask
         val wasPressed = liveState.isButtonPressed(mask)
-
         if (pressed && !wasPressed && haptics.enabled) {
             when (type) {
                 ButtonInput.SHIFT_UP -> haptics.shiftUp()
@@ -246,13 +220,11 @@ class ControllerViewModel(application: Application) : AndroidViewModel(applicati
                 else -> Unit
             }
         }
-
         signalTransportIfChanged(liveState.setButton(mask, pressed))
     }
 
     fun handleTouchWheelDelta(delta: Float) {
-        returnJob?.cancel()
-        returnJob = null
+        returnJob?.cancel(); returnJob = null
         updateSteeringFromAngle(currentSteeringAngleDeg + delta)
     }
 
@@ -295,9 +267,7 @@ class ControllerViewModel(application: Application) : AndroidViewModel(applicati
     }
 
     fun installReadyUpdate() = updater.installReadyUpdate()
-
     fun openUpdateInstallPermission() = updater.openInstallPermissionSettings()
-
     fun resumePendingUpdateInstall() = updater.resumePendingInstall()
 
     fun setAutomaticUpdates(enabled: Boolean) {
@@ -327,6 +297,7 @@ class ControllerViewModel(application: Application) : AndroidViewModel(applicati
     override fun onCleared() {
         controllerRequested = false
         stopControllerInternal(resetInputs = true)
+        gameFeedback.close()
         sensorHandler.close()
         super.onCleared()
     }
