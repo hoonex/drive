@@ -17,6 +17,7 @@ class ControllerViewModel(application: Application) : AndroidViewModel(applicati
     val uiSettings = ControllerUiPreferences(application)
     val sensorHandler = SensorHandler(application)
     val haptics = HapticManager(application)
+    val gameFeedback = GameFeedbackClient(application)
     val updater = AppUpdater(application)
     val updateState: StateFlow<AppUpdateState> = updater.state
 
@@ -33,6 +34,7 @@ class ControllerViewModel(application: Application) : AndroidViewModel(applicati
 
     private var udpClient: UdpClient? = null
     private var networkJob: Job? = null
+    private var gameFeedbackJob: Job? = null
     private var uiSamplerJob: Job? = null
     private val telemetryJobs = mutableListOf<Job>()
     private var returnJob: Job? = null
@@ -67,6 +69,7 @@ class ControllerViewModel(application: Application) : AndroidViewModel(applicati
 
     init {
         haptics.enabled = settings.hapticsEnabled
+        gameFeedback.enabled = settings.hapticsEnabled
 
         sensorHandler.onMotionAngleChanged = { angle ->
             if (activeSteeringMode == SteeringMode.MOTION) {
@@ -125,6 +128,7 @@ class ControllerViewModel(application: Application) : AndroidViewModel(applicati
         activeSteeringResponse = uiSettings.steeringResponse
         activeInvertSteering = uiSettings.invertSteering
         haptics.enabled = settings.hapticsEnabled
+        gameFeedback.enabled = settings.hapticsEnabled
         connectionError.value = null
 
         sensorHandler.start(activeSteeringMode, settings.lowLatencyMode)
@@ -138,7 +142,10 @@ class ControllerViewModel(application: Application) : AndroidViewModel(applicati
         udpClient = client
 
         telemetryJobs += viewModelScope.launch {
-            client.isConnected.collect { isConnected.value = it }
+            client.isConnected.collect {
+                isConnected.value = it
+                if (!it) gameFeedback.stopRumble()
+            }
         }
         telemetryJobs += viewModelScope.launch {
             client.latency.collect { latency.value = it }
@@ -168,6 +175,9 @@ class ControllerViewModel(application: Application) : AndroidViewModel(applicati
             }
         }
 
+        gameFeedbackJob = viewModelScope.launch(Dispatchers.IO) {
+            gameFeedback.start(settings.ip)
+        }
         networkJob = viewModelScope.launch(Dispatchers.IO) {
             client.start()
         }
@@ -182,6 +192,9 @@ class ControllerViewModel(application: Application) : AndroidViewModel(applicati
         uiSamplerJob = null
         networkJob?.cancel()
         networkJob = null
+        gameFeedbackJob?.cancel()
+        gameFeedbackJob = null
+        gameFeedback.close()
         telemetryJobs.forEach { it.cancel() }
         telemetryJobs.clear()
         udpClient?.close()
@@ -210,6 +223,7 @@ class ControllerViewModel(application: Application) : AndroidViewModel(applicati
     fun setHapticsEnabled(enabled: Boolean) {
         settings.hapticsEnabled = enabled
         haptics.enabled = enabled
+        gameFeedback.enabled = enabled
         if (enabled) haptics.modeChange()
     }
 
@@ -327,6 +341,7 @@ class ControllerViewModel(application: Application) : AndroidViewModel(applicati
     override fun onCleared() {
         controllerRequested = false
         stopControllerInternal(resetInputs = true)
+        gameFeedback.close()
         sensorHandler.close()
         super.onCleared()
     }
