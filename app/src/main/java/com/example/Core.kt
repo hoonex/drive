@@ -296,7 +296,7 @@ class UdpClient(
         private const val PACKET_SIZE = 36
         private const val ECHO_SIZE = 12
         private const val BASE_PERIOD_NS = 10_000_000L
-        private const val FAST_PATH_MIN_NS = 6_000_000L
+        private const val FAST_PATH_MIN_NS = 5_000_000L
         private const val CONNECTION_TIMEOUT_NS = 750_000_000L
         private const val LATENCY_UI_PERIOD_NS = 75_000_000L
         private const val SENT_RING_SIZE = 512
@@ -543,7 +543,7 @@ class UdpClient(
 
 class SensorHandler(context: Context) : SensorEventListener, AutoCloseable {
     companion object {
-        // Transport peaks around 166 Hz, so sampling above 200 Hz only adds wakeups/heat.
+        // Transport fast-path is capped at 200 Hz, matching the motion sensor ceiling without redundant sends.
         private const val MOTION_LOW_LATENCY_US = 5_000
         private const val TILT_LOW_LATENCY_US = 10_000
         private const val BALANCED_SENSOR_US = 20_000
