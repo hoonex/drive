@@ -32,4 +32,28 @@ class ControllerUiPreferences(context: Context) {
             )
         }.getOrDefault(TouchWheelSide.LEFT)
         set(value) = prefs.edit().putString("touchWheelSide", value.name).apply()
+
+    var steeringDeadzone: Float
+        get() = prefs.getFloat("steeringDeadzone", 0.015f).coerceIn(0f, 0.12f)
+        set(value) = prefs.edit().putFloat("steeringDeadzone", value.coerceIn(0f, 0.12f)).apply()
+
+    var steeringResponse: Float
+        get() = prefs.getFloat("steeringResponse", 1.0f).coerceIn(0.55f, 2.0f)
+        set(value) = prefs.edit().putFloat("steeringResponse", value.coerceIn(0.55f, 2.0f)).apply()
+
+    var invertSteering: Boolean
+        get() = prefs.getBoolean("invertSteering", false)
+        set(value) = prefs.edit().putBoolean("invertSteering", value).apply()
+
+    var diagnosticsEnabled: Boolean
+        get() = prefs.getBoolean("diagnosticsEnabled", true)
+        set(value) = prefs.edit().putBoolean("diagnosticsEnabled", value).apply()
+
+    var automaticUpdates: Boolean
+        get() = prefs.getBoolean("automaticUpdates", true)
+        set(value) = prefs.edit().putBoolean("automaticUpdates", value).apply()
+
+    var updateWifiOnly: Boolean
+        get() = prefs.getBoolean("updateWifiOnly", true)
+        set(value) = prefs.edit().putBoolean("updateWifiOnly", value).apply()
 }
