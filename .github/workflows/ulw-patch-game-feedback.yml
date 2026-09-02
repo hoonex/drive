@@ -1,0 +1,375 @@
+name: ULW game feedback patch
+
+on:
+  push:
+    branches:
+      - ulw/game-rumble-feedback-20260902
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ulw/game-rumble-feedback-20260902
+          fetch-depth: 0
+      - name: Apply game feedback changes
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+
+          core = Path('app/src/main/java/com/example/Core.kt')
+          text = core.read_text()
+
+          old = '''    @Volatile
+    var enabled: Boolean = true
+
+    private var lastShiftTimeMs = 0L
+'''
+          new = '''    @Volatile
+    var enabled: Boolean = true
+
+    @Volatile
+    var gameFeedbackEnabled: Boolean = true
+
+    @Volatile
+    var gameFeedbackStrength: Float = 1f
+
+    private var lastShiftTimeMs = 0L
+    private var lastGameFeedbackTimeMs = 0L
+'''
+          if old in text:
+              text = text.replace(old, new, 1)
+
+          marker = '''    fun modeChange() = vibrate(14, 80)
+
+    fun recenter() {
+'''
+          replacement = '''    fun modeChange() = vibrate(14, 80)
+
+    fun gameFeedback(largeMotor: Int, smallMotor: Int) {
+        if (!gameFeedbackEnabled || vibrator?.hasVibrator() != true) return
+        val large = largeMotor.coerceIn(0, 255) / 255f
+        val small = smallMotor.coerceIn(0, 255) / 255f
+        if (large <= 0.001f && small <= 0.001f) {
+            stopGameFeedback()
+            return
+        }
+
+        val now = SystemClock.elapsedRealtime()
+        if (now - lastGameFeedbackTimeMs < 12L) return
+        lastGameFeedbackTimeMs = now
+
+        // Android exposes a single phone vibrator while XInput supplies two motor channels.
+        // Preserve heavy low-frequency impacts while retaining a smaller high-frequency component.
+        val mixed = max(large * 0.90f, small * 0.72f)
+        val amplitude = (mixed * gameFeedbackStrength.coerceIn(0.25f, 1.5f) * 255f)
+            .toInt()
+            .coerceIn(1, 255)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            vibrator.vibrate(VibrationEffect.createOneShot(45L, amplitude))
+        } else {
+            @Suppress("DEPRECATION")
+            vibrator.vibrate(45L)
+        }
+    }
+
+    fun stopGameFeedback() {
+        lastGameFeedbackTimeMs = 0L
+        vibrator?.cancel()
+    }
+
+    fun recenter() {
+'''
+          if marker in text:
+              text = text.replace(marker, replacement, 1)
+
+          old = '''class UdpClient(
+    private val ip: String,
+'''
+          new = '''data class GameFeedback(
+    val largeMotor: Int = 0,
+    val smallMotor: Int = 0,
+)
+
+class UdpClient(
+    private val ip: String,
+'''
+          if old in text:
+              text = text.replace(old, new, 1)
+
+          old = '''        private const val PACKET_SIZE = 36
+        private const val ECHO_SIZE = 12
+'''
+          new = '''        private const val PACKET_SIZE = 36
+        private const val ECHO_SIZE = 12
+        private const val FEEDBACK_SIZE = 8
+'''
+          if old in text:
+              text = text.replace(old, new, 1)
+
+          old = '''    val maxPacketGapMicros = MutableStateFlow(0L)
+    val lastError = MutableStateFlow<String?>(null)
+'''
+          new = '''    val maxPacketGapMicros = MutableStateFlow(0L)
+    val gameFeedback = MutableStateFlow(GameFeedback())
+    val lastError = MutableStateFlow<String?>(null)
+'''
+          if old in text:
+              text = text.replace(old, new, 1)
+
+          old = '''                datagramSocket.receive(echoPacket)
+                if (echoPacket.length < ECHO_SIZE) continue
+
+                echoReader.clear()
+'''
+          new = '''                datagramSocket.receive(echoPacket)
+
+                if (
+                    echoPacket.length == FEEDBACK_SIZE &&
+                    echoBytes[0] == 'P'.code.toByte() &&
+                    echoBytes[1] == 'C'.code.toByte() &&
+                    echoBytes[2] == 'F'.code.toByte() &&
+                    echoBytes[3] == 'B'.code.toByte() &&
+                    echoBytes[4].toInt() == 1
+                ) {
+                    gameFeedback.value = GameFeedback(
+                        largeMotor = echoBytes[5].toInt() and 0xFF,
+                        smallMotor = echoBytes[6].toInt() and 0xFF,
+                    )
+                    continue
+                }
+
+                if (echoPacket.length < ECHO_SIZE) continue
+
+                echoReader.clear()
+'''
+          if old in text:
+              text = text.replace(old, new, 1)
+          else:
+              raise SystemExit('receive loop marker not found')
+
+          old = '''        socket?.close()
+        socket = null
+        isConnected.value = false
+'''
+          new = '''        socket?.close()
+        socket = null
+        gameFeedback.value = GameFeedback()
+        isConnected.value = false
+'''
+          if old in text:
+              text = text.replace(old, new, 1)
+
+          core.write_text(text)
+
+          prefs = Path('app/src/main/java/com/example/ControllerUiPreferences.kt')
+          text = prefs.read_text()
+          marker = '''    var diagnosticsEnabled: Boolean
+        get() = prefs.getBoolean("diagnosticsEnabled", false)
+        set(value) = prefs.edit().putBoolean("diagnosticsEnabled", value).apply()
+
+'''
+          insert = marker + '''    var gameFeedbackEnabled: Boolean
+        get() = prefs.getBoolean("gameFeedbackEnabled", true)
+        set(value) = prefs.edit().putBoolean("gameFeedbackEnabled", value).apply()
+
+    var gameFeedbackStrength: Float
+        get() = prefs.getFloat("gameFeedbackStrength", 1f).coerceIn(0.25f, 1.5f)
+        set(value) = prefs.edit().putFloat("gameFeedbackStrength", value.coerceIn(0.25f, 1.5f)).apply()
+
+'''
+          if marker in text:
+              text = text.replace(marker, insert, 1)
+          prefs.write_text(text)
+
+          vm = Path('app/src/main/java/com/example/ViewModel.kt')
+          text = vm.read_text()
+          old = '''    init {
+        haptics.enabled = settings.hapticsEnabled
+
+        sensorHandler.onMotionAngleChanged = { angle ->
+'''
+          new = '''    init {
+        haptics.enabled = settings.hapticsEnabled
+        haptics.gameFeedbackEnabled = uiSettings.gameFeedbackEnabled
+        haptics.gameFeedbackStrength = uiSettings.gameFeedbackStrength
+
+        sensorHandler.onMotionAngleChanged = { angle ->
+'''
+          if old in text:
+              text = text.replace(old, new, 1)
+
+          old = '''        haptics.enabled = settings.hapticsEnabled
+        connectionError.value = null
+'''
+          new = '''        haptics.enabled = settings.hapticsEnabled
+        haptics.gameFeedbackEnabled = uiSettings.gameFeedbackEnabled
+        haptics.gameFeedbackStrength = uiSettings.gameFeedbackStrength
+        connectionError.value = null
+'''
+          if old in text:
+              text = text.replace(old, new, 1)
+
+          old = '''        telemetryJobs += viewModelScope.launch {
+            client.maxPacketGapMicros.collect { maxPacketGapMicros.value = it }
+        }
+        telemetryJobs += viewModelScope.launch {
+            client.lastError.collect { connectionError.value = it }
+        }
+'''
+          new = '''        telemetryJobs += viewModelScope.launch {
+            client.maxPacketGapMicros.collect { maxPacketGapMicros.value = it }
+        }
+        telemetryJobs += viewModelScope.launch {
+            client.gameFeedback.collect { feedback ->
+                haptics.gameFeedback(feedback.largeMotor, feedback.smallMotor)
+            }
+        }
+        telemetryJobs += viewModelScope.launch {
+            client.lastError.collect { connectionError.value = it }
+        }
+'''
+          if old in text:
+              text = text.replace(old, new, 1)
+          else:
+              raise SystemExit('telemetry marker not found')
+
+          old = '''        udpClient?.close()
+        udpClient = null
+
+        isConnected.value = false
+'''
+          new = '''        udpClient?.close()
+        udpClient = null
+        haptics.stopGameFeedback()
+
+        isConnected.value = false
+'''
+          if old in text:
+              text = text.replace(old, new, 1)
+
+          marker = '''    fun setHapticsEnabled(enabled: Boolean) {
+        settings.hapticsEnabled = enabled
+        haptics.enabled = enabled
+        if (enabled) haptics.modeChange()
+    }
+
+'''
+          insert = marker + '''    fun setGameFeedbackEnabled(enabled: Boolean) {
+        uiSettings.gameFeedbackEnabled = enabled
+        haptics.gameFeedbackEnabled = enabled
+        if (!enabled) haptics.stopGameFeedback()
+    }
+
+    fun setGameFeedbackStrength(strength: Float) {
+        val clamped = strength.coerceIn(0.25f, 1.5f)
+        uiSettings.gameFeedbackStrength = clamped
+        haptics.gameFeedbackStrength = clamped
+    }
+
+'''
+          if marker in text:
+              text = text.replace(marker, insert, 1)
+          vm.write_text(text)
+
+          ui = Path('app/src/main/java/com/example/EnhancedSettingsScreen.kt')
+          text = ui.read_text()
+          old = '''    var haptics by remember { mutableStateOf(viewModel.settings.hapticsEnabled) }
+    var diagnostics by remember { mutableStateOf(viewModel.uiSettings.diagnosticsEnabled) }
+'''
+          new = '''    var haptics by remember { mutableStateOf(viewModel.settings.hapticsEnabled) }
+    var gameFeedback by remember { mutableStateOf(viewModel.uiSettings.gameFeedbackEnabled) }
+    var gameFeedbackStrength by remember { mutableFloatStateOf(viewModel.uiSettings.gameFeedbackStrength) }
+    var diagnostics by remember { mutableStateOf(viewModel.uiSettings.diagnosticsEnabled) }
+'''
+          if old in text:
+              text = text.replace(old, new, 1)
+
+          old = '''                        haptics = haptics,
+                        onHaptics = {
+                            haptics = it
+                            viewModel.setHapticsEnabled(it)
+                        },
+                        diagnostics = diagnostics,
+'''
+          new = '''                        haptics = haptics,
+                        onHaptics = {
+                            haptics = it
+                            viewModel.setHapticsEnabled(it)
+                        },
+                        gameFeedback = gameFeedback,
+                        onGameFeedback = {
+                            gameFeedback = it
+                            viewModel.setGameFeedbackEnabled(it)
+                        },
+                        gameFeedbackStrength = gameFeedbackStrength,
+                        onGameFeedbackStrength = {
+                            gameFeedbackStrength = it
+                            viewModel.setGameFeedbackStrength(it)
+                        },
+                        diagnostics = diagnostics,
+'''
+          if old in text:
+              text = text.replace(old, new, 1)
+
+          old = '''    haptics: Boolean,
+    onHaptics: (Boolean) -> Unit,
+    diagnostics: Boolean,
+'''
+          new = '''    haptics: Boolean,
+    onHaptics: (Boolean) -> Unit,
+    gameFeedback: Boolean,
+    onGameFeedback: (Boolean) -> Unit,
+    gameFeedbackStrength: Float,
+    onGameFeedbackStrength: (Float) -> Unit,
+    diagnostics: Boolean,
+'''
+          if old in text:
+              text = text.replace(old, new, 1)
+
+          marker = '''        SwitchRow(
+            "Haptic feedback",
+            "Shift, handbrake and recenter confirmation.",
+            haptics,
+            onHaptics,
+            { Icon(Icons.Rounded.Vibration, null, tint = DriveAccent) },
+        )
+'''
+          insert = marker + '''        SwitchRow(
+            "Game rumble",
+            "Relay the game's Xbox vibration back to this phone over UDP.",
+            gameFeedback,
+            onGameFeedback,
+            { Icon(Icons.Rounded.Vibration, null, tint = DriveAccent) },
+        )
+        if (gameFeedback) {
+            ValueHeader("Rumble strength", "${(gameFeedbackStrength * 100f).roundToInt()}%")
+            Slider(
+                value = gameFeedbackStrength,
+                onValueChange = onGameFeedbackStrength,
+                valueRange = 0.25f..1.5f,
+            )
+        }
+'''
+          if marker in text:
+              text = text.replace(marker, insert, 1)
+          else:
+              raise SystemExit('haptics UI marker not found')
+          ui.write_text(text)
+          PY
+
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add app/src/main/java/com/example/Core.kt app/src/main/java/com/example/ControllerUiPreferences.kt app/src/main/java/com/example/ViewModel.kt app/src/main/java/com/example/EnhancedSettingsScreen.kt
+          if git diff --cached --quiet; then
+            echo 'Patch already applied.'
+            exit 0
+          fi
+          git commit -m 'feat(android): relay game rumble to phone haptics'
+          git push origin HEAD:ulw/game-rumble-feedback-20260902
