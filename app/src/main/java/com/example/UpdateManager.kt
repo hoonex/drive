@@ -262,25 +262,39 @@ class AppUpdater(private val context: Context) {
 
     @Suppress("DEPRECATION")
     private fun installedPackageInfo(): PackageInfo {
-        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            context.packageManager.getPackageInfo(
+        val packageManager = context.packageManager
+        return when {
+            Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU -> packageManager.getPackageInfo(
                 context.packageName,
                 PackageManager.PackageInfoFlags.of(PackageManager.GET_SIGNING_CERTIFICATES.toLong()),
             )
-        } else {
-            context.packageManager.getPackageInfo(context.packageName, PackageManager.GET_SIGNING_CERTIFICATES)
+            Build.VERSION.SDK_INT >= Build.VERSION_CODES.P -> packageManager.getPackageInfo(
+                context.packageName,
+                PackageManager.GET_SIGNING_CERTIFICATES,
+            )
+            else -> packageManager.getPackageInfo(
+                context.packageName,
+                PackageManager.GET_SIGNATURES,
+            )
         }
     }
 
     @Suppress("DEPRECATION")
     private fun archivePackageInfo(apk: File): PackageInfo? {
-        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            context.packageManager.getPackageArchiveInfo(
+        val packageManager = context.packageManager
+        return when {
+            Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU -> packageManager.getPackageArchiveInfo(
                 apk.absolutePath,
                 PackageManager.PackageInfoFlags.of(PackageManager.GET_SIGNING_CERTIFICATES.toLong()),
             )
-        } else {
-            context.packageManager.getPackageArchiveInfo(apk.absolutePath, PackageManager.GET_SIGNING_CERTIFICATES)
+            Build.VERSION.SDK_INT >= Build.VERSION_CODES.P -> packageManager.getPackageArchiveInfo(
+                apk.absolutePath,
+                PackageManager.GET_SIGNING_CERTIFICATES,
+            )
+            else -> packageManager.getPackageArchiveInfo(
+                apk.absolutePath,
+                PackageManager.GET_SIGNATURES,
+            )
         }
     }
 
@@ -321,10 +335,15 @@ internal fun parseReleaseInfo(json: JSONObject): AppUpdateInfo {
         }
     }
     val apkAsset = asset ?: error("Release APK asset is missing")
+    val downloadUrl = apkAsset.getString("browser_download_url")
+    if (!downloadUrl.startsWith("https://github.com/hoonex/drive/releases/download/")) {
+        error("Release APK URL is outside the expected GitHub repository")
+    }
+
     return AppUpdateInfo(
         versionCode = 100_000L + runNumber,
         versionName = "1.2.$runNumber",
-        downloadUrl = apkAsset.getString("browser_download_url"),
+        downloadUrl = downloadUrl,
         expectedSha256 = apkAsset.optString("digest").takeIf { it.isNotBlank() },
         sizeBytes = apkAsset.optLong("size", -1L),
         sourceCommit = json.optString("target_commitish"),
